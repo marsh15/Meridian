@@ -52,6 +52,70 @@ services:
       retries: 30
       start_period: 15s
 
+  temporal-db:
+    # throwaway store for Temporal's own event histories — kept off the app
+    # database so workflow history never competes with market data
+    image: postgres:16-alpine
+    container_name: meridian-temporal-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+      POSTGRES_DB: temporal
+    volumes:
+      - meridian-temporal-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U temporal"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  temporal:
+    # durable market-lifecycle workflows (ROADMAP phase 3): auto-close timers
+    # and resolution → settlement run here instead of in the API process
+    image: temporalio/auto-setup:1.29.7
+    container_name: meridian-temporal
+    restart: unless-stopped
+    depends_on:
+      temporal-db:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: temporal
+      POSTGRES_PWD: temporal
+      POSTGRES_SEEDS: temporal-db
+      # default binds only the container's eth0 address; 0.0.0.0 lets the
+      # loopback healthcheck (and any network mode) reach the frontend
+      BIND_ON_IP: 0.0.0.0
+      DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/docker.yaml
+    ports:
+      - "7233:7233"
+    volumes:
+      - ./docker/temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro
+    healthcheck:
+      # the bundled tctl/CLI builds in this image are unreliable; a TCP
+      # connect to the frontend port is enough for compose gating
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/127.0.0.1/7233'"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 25s
+
+  temporal-ui:
+    # optional: `docker compose --profile ui up` → http://localhost:8081
+    image: temporalio/ui:2.35.0
+    container_name: meridian-temporal-ui
+    profiles: ["ui"]
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: localhost:7233
+    ports:
+      - "8081:8080"
+
 volumes:
   meridian-pgdata:
   meridian-kafkadata:
+  meridian-temporal-pgdata:
