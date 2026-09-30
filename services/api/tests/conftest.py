@@ -2,7 +2,11 @@ import asyncio
 import os
 
 # Must be set before any app import — engine + settings bind at import time.
-TEST_DSN = "postgresql+asyncpg://meridian:meridian@localhost:5434/meridian_test"
+# TEST_DATABASE_URL lets CI point the suite at its own Postgres.
+TEST_DSN = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://meridian:meridian@localhost:5434/meridian_test",
+)
 os.environ["DATABASE_URL"] = TEST_DSN
 
 import asyncpg  # noqa: E402
@@ -14,7 +18,8 @@ from sqlalchemy import text  # noqa: E402
 
 
 async def _create_test_db() -> None:
-    admin = await asyncpg.connect("postgresql://meridian:meridian@localhost:5434/postgres")
+    admin_dsn = TEST_DSN.replace("+asyncpg", "").rsplit("/", 1)[0] + "/postgres"
+    admin = await asyncpg.connect(admin_dsn)
     try:
         await admin.execute("DROP DATABASE IF EXISTS meridian_test")
         await admin.execute("CREATE DATABASE meridian_test")

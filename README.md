@@ -12,7 +12,7 @@ market maker, instant fills, live prices over SSE, play money.
 | Data | PostgreSQL 16 — BIGINT cents + NUMERIC(24,10) shares |
 | Realtime | SSE + Postgres LISTEN/NOTIFY (`/api/stream`, `/api/markets/{slug}/stream`) |
 | Events | Transactional outbox (`outbox_events`) — Kafka relay is the next phase |
-| Tests | pytest — AMM invariants, concurrent-order serialization, resolution payouts |
+| Tests | pytest (API core) · Vitest (AMM mirror vs Python fixtures) · Playwright (signup→trade→resolve) |
 
 Decisions are recorded in [docs/adr/](docs/adr/); the phased target
 architecture (Kafka, Temporal, ledger, charts, AI layer) is in
@@ -32,9 +32,13 @@ this machine). First run installs web dependencies automatically; Ctrl-C
 (`db`, `api`, `web`, `migrate`, `seed`, `down`) for running them alone.
 
 ```bash
-make test        # 18 tests: math, money, concurrency, SSE mechanics
+make test        # API: AMM math, money, concurrency, idempotency, sweeper, pagination
 make typecheck   # web: tsc --noEmit
+make test-unit   # web: Vitest — lib/amm.ts mirror against Python-engine fixtures
+make test-e2e    # web: Playwright happy path (signup → trade → resolve); boots the stack
 ```
+
+CI (`.github/workflows/ci.yml`) runs pytest and tsc + Vitest on every push.
 
 ## Layout
 
@@ -56,6 +60,24 @@ docs/            ADRs + ROADMAP
   and filters by slug. No Redis, no socket server, free-tier friendly.
 - **Events** — the same transaction appends to `outbox_events`, so a later
   Kafka relay can publish domain events with zero dual-write risk.
+- **Idempotent orders** — clients send an `Idempotency-Key` header; the
+  `(user, key)` row is written in the trade's own transaction with a hash of
+  the request and the exact response body, so a replayed or racing duplicate
+  returns the original fill instead of trading again (tested).
+- **Market lifecycle** — a 30 s sweeper (disable with `MARKET_SWEEP_INTERVAL_S=0`)
+  transitions expired markets to the closed/awaiting-resolution state with
+  the same event + SSE contract as trades and resolutions; the creator
+  resolves from there. Becomes a Temporal timer when settlement grows
+  external waits.
+- **Read models** — trades and price history paginate by keyset
+  (`?limit&before_id`), so live inserts can't skew a page walk.
+
+## Production checklist
+
+Everything is env-driven (`services/api/.env.example` documents the knobs):
+`DATABASE_URL` for the real Postgres, `COOKIE_SECURE=true` behind HTTPS,
+`CORS_ORIGINS` pinned to the deployed origin, `MARKET_SWEEP_INTERVAL_S`
+for the close sweeper.
 
 ## History
 

@@ -32,4 +32,10 @@ test: ## API test suite
 typecheck: ## Web typecheck
 	cd apps/web && npm run typecheck
 
-.PHONY: help dev db down api web migrate seed test typecheck
+test-unit: ## Web unit tests (Vitest: AMM mirror vs Python fixtures)
+	cd apps/web && npm run test:unit
+
+test-e2e: ## Web e2e (Playwright happy path; boots the stack itself)
+	cd apps/web && npm run test:e2e
+
+.PHONY: help dev db down api web migrate seed test typecheck test-unit test-e2e
