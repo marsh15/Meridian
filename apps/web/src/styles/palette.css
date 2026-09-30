@@ -1,2 +1,232 @@
 /* phase 4 — palette track styles; kept separate so parallel work never
    touches app.css (imported at the top of app.css) */
+
+/* ---------- shared kbd hint (generalizes .search-kbd from app.css) ---------- */
+.palette-kbd,
+.palette-foot kbd,
+.trade-keys kbd {
+  display: inline-block;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 6px;
+  white-space: nowrap;
+}
+
+/* ---------- header trigger ---------- */
+.search-trigger .palette-kbd {
+  font-size: 10px;
+  padding: 2px 5px;
+}
+
+/* ---------- command palette ---------- */
+/* rides on .modal-overlay + .modal.card from app.css; only the palette
+   specifics live here */
+.palette {
+  display: flex;
+  flex-direction: column;
+  max-width: 560px;
+  padding: 0;
+  overflow: hidden;
+  max-height: min(520px, 72dvh);
+}
+
+.palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+.palette-input-row svg {
+  width: 15px;
+  height: 15px;
+  color: var(--muted);
+  flex: none;
+}
+.palette-input-row input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 15px;
+}
+.palette-input-row input::placeholder {
+  color: var(--muted);
+}
+
+.palette-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  border-left: 2px solid transparent;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.palette-item.active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  color: var(--ink);
+}
+
+/* leading slot — ticker chip or command glyph, fixed so labels align */
+.palette-ticker,
+.palette-glyph {
+  flex: none;
+  width: 56px;
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-ticker {
+  font-size: 10.5px;
+  font-weight: var(--label-weight);
+  text-transform: var(--label-transform);
+  letter-spacing: var(--label-tracking);
+  color: var(--accent-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  padding: 3px 2px;
+}
+.palette-glyph {
+  color: var(--muted);
+  font-size: 13px;
+}
+.palette-item.active .palette-glyph {
+  color: var(--accent);
+}
+
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.palette-item.market .palette-label {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.palette-right {
+  flex: none;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.palette-right.price {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13.5px;
+  color: var(--up);
+}
+
+.palette-skel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 10px;
+}
+.palette-skel .skel {
+  height: 14px;
+}
+.palette-skel .skel:nth-child(2) {
+  width: 82%;
+}
+.palette-skel .skel:nth-child(3) {
+  width: 64%;
+}
+
+.palette-empty {
+  padding: 28px 16px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+.palette-empty b {
+  color: var(--ink-soft);
+}
+
+.palette-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 11px;
+  color: var(--muted);
+  flex: none;
+}
+.palette-foot span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+.palette-foot kbd {
+  padding: 2px 5px;
+  font-size: 10px;
+}
+.palette-foot-spacer {
+  flex: 1;
+}
+
+/* ---------- trade panel keyboard hint ---------- */
+.trade-keys {
+  display: block;
+  margin-top: 5px;
+}
+.trade-keys kbd {
+  padding: 2px 5px;
+  margin: 0 1px;
+}
+
+/* ---------- responsive ---------- */
+@media (max-width: 760px) {
+  .search-trigger .search-trigger-label,
+  .search-trigger .palette-kbd {
+    display: none;
+  }
+  .palette-ticker,
+  .palette-glyph {
+    width: 44px;
+  }
+  .palette-foot {
+    gap: 10px;
+  }
+  .palette-foot .palette-foot-spacer + span {
+    display: none;
+  }
+}
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .palette-item,
+  .palette {
+    transition-duration: 0.01ms;
+  }
+}

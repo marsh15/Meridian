@@ -2,9 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/auth/AuthContext";
 import { fmtMoney } from "@/lib/format";
+import { isMacPlatform } from "@/hooks/useHotkeys";
+
+function SearchIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <circle cx="6.5" cy="6.5" r="4.5" stroke="currentColor" strokeWidth="1.6" />
+      <path d="M10 10l4 4" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function ResetIcon() {
   return (
@@ -26,6 +36,10 @@ export default function Header() {
   const pathname = usePathname();
   const [armed, setArmed] = useState(false);
   const armTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* the ⌘/Ctrl hint differs per platform — decide after mount so server and
+     first client render agree */
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   /* reset wipes the balance and positions — arm first, then confirm */
   function onReset() {
@@ -67,6 +81,18 @@ export default function Header() {
         </nav>
 
         <div className="header-spacer" />
+
+        <button
+          className="btn-ghost search-trigger"
+          aria-label="Search (Command K)"
+          onClick={() => window.dispatchEvent(new Event("meridian:open-palette"))}
+        >
+          <SearchIcon />
+          <span className="search-trigger-label">Search</span>
+          <kbd className="palette-kbd" aria-hidden="true">
+            {mounted && !isMacPlatform() ? "Ctrl K" : "⌘K"}
+          </kbd>
+        </button>
 
         {ready && user && (
           <div className="user-chip" title={`Signed in as ${user.email}`}>

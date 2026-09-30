@@ -5,6 +5,7 @@ import { Providers } from "../providers";
 import Header from "../components/Header";
 import TickerTape from "../components/TickerTape";
 import AuthModal from "../components/AuthModal";
+import CommandPalette from "../components/CommandPalette";
 
 export const metadata: Metadata = {
   title: "Meridian — Trade on What Happens Next",
@@ -65,6 +66,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </div>
           </footer>
           <AuthModal />
+          <CommandPalette />
         </Providers>
       </body>
     </html>

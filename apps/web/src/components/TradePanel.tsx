@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/auth/AuthContext";
 import { api } from "@/lib/api";
 import { sharesForDollars, proceedsForShares } from "@/lib/amm";
+import { useHotkeys } from "@/hooks/useHotkeys";
 import type { MarketDetail } from "@/lib/schemas";
 
 const PRESETS = [10, 50, 100, 250];
@@ -37,6 +38,31 @@ export default function TradePanel({
   const tradable = market.status === "open";
   const price = side === "yes" ? market.price : 100 - market.price;
   const owned = market.yourPosition?.[side]?.shares ?? 0;
+
+  /* keyboard trading: B/S flips the action, Y/N the side, Esc resets amounts.
+     Checked at event time (not render time) so a dialog opened after render —
+     the command palette, auth modal — still swallows the keys. The typing
+     guard inside useHotkeys keeps text entry out of this. */
+  function unlessDialog(fn: () => void) {
+    return () => {
+      if (document.querySelector('[role="dialog"]')) return;
+      fn();
+    };
+  }
+
+  useHotkeys(
+    {
+      b: unlessDialog(() => setAction("buy")),
+      s: unlessDialog(() => setAction("sell")),
+      y: unlessDialog(() => setSide("yes")),
+      n: unlessDialog(() => setSide("no")),
+      escape: unlessDialog(() => {
+        setDollars(50);
+        setSellShares(0);
+      }),
+    },
+    tradable,
+  );
 
   const estimate = useMemo(() => {
     if (!market.q) return null;
@@ -257,6 +283,10 @@ export default function TradePanel({
       <p className="fineprint">
         Instant fill at market price · live prices over SSE · play money · $1 per winning share at
         resolution
+        <span className="trade-keys">
+          Keys: <kbd>B</kbd>/<kbd>S</kbd> buy·sell · <kbd>Y</kbd>/<kbd>N</kbd> side · <kbd>Esc</kbd>{" "}
+          reset
+        </span>
       </p>
     </div>
   );

@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { CATEGORIES } from "@/lib/format";
 import { useModalLifecycle } from "@/hooks/useModalLifecycle";
@@ -21,6 +22,7 @@ function CloseIcon() {
 
 export default function CreateMarketModal({ onClose }: { onClose: () => void }) {
   const router = useRouter();
+  const qc = useQueryClient();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [category, setCategory] = useState(CATEGORIES[0]);
@@ -44,6 +46,9 @@ export default function CreateMarketModal({ onClose }: { onClose: () => void }) 
         resolution: form.get("resolution"),
         initialYes: Number(initialYes),
       });
+      // the grid, palette, and categories page all read ["markets"]; a fresh
+      // market must appear there even inside the 5s staleTime window
+      qc.invalidateQueries({ queryKey: ["markets"] });
       onClose();
       router.push(`/market/${market.slug}`);
     } catch (err) {
