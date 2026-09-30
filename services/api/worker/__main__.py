@@ -2,8 +2,9 @@ import asyncio
 import logging
 
 from sqlalchemy import text
-from temporalio.client import Client, WorkflowExecutionAlreadyStartedError
-from temporalio.client import WorkflowIDReusePolicy
+from temporalio.client import Client
+from temporalio.common import WorkflowIDReusePolicy
+from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError
 from temporalio.worker import Worker
 
@@ -54,7 +55,7 @@ async def starter(client: Client) -> None:
                         id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
                     )
                     log.info("started %s (%s)", workflow_id(m["id"]), m["slug"])
-                except WorkflowExecutionAlreadyStartedError:
+                except WorkflowAlreadyStartedError:
                     pass  # already running — fine
                 async with SessionFactory() as session:
                     async with session.begin():

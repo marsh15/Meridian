@@ -9,11 +9,9 @@ synchronous contract while execution stays durable in the worker.
 import asyncio
 
 from sqlalchemy import text
-from temporalio.client import (
-    Client,
-    WorkflowExecutionAlreadyStartedError,
-    WorkflowIDReusePolicy,
-)
+from temporalio.client import Client
+from temporalio.common import WorkflowIDReusePolicy
+from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError
 
 from app.config import settings
@@ -38,7 +36,7 @@ async def request_resolution(market: dict, outcome: str) -> None:
             task_queue=settings.temporal_task_queue,
             id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
         )
-    except WorkflowExecutionAlreadyStartedError:
+    except WorkflowAlreadyStartedError:
         handle = client.get_workflow_handle(wid)
 
     try:
