@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,6 +41,61 @@ def market_slug(question: str) -> str:
 async def load_market(session: AsyncSession, where: str, params: dict) -> Any | None:
     row = (await session.execute(select_market(where), params)).first()
     return row._mapping if row else None
+
+
+# ------------------------- keyset pagination pages --------------------------
+
+TRADES_PAGE_DEFAULT, TRADES_PAGE_MAX = 25, 100
+HISTORY_PAGE_DEFAULT, HISTORY_PAGE_MAX = 200, 1000
+
+
+async def _trades_page(
+    session: AsyncSession, market_id: int, limit: int, before_id: int | None
+) -> tuple[list[dict], int | None]:
+    """Newest-first window of trades strictly older than `before_id`;
+    `next_before_id` continues the walk (keyset, so live inserts can't skew it)."""
+    sql = ("SELECT t.*, u.display_name FROM trades t JOIN users u ON u.id = t.user_id "
+           "WHERE t.market_id = :m")
+    params: dict[str, Any] = {"m": market_id}
+    if before_id is not None:
+        sql += " AND t.id < :before"
+        params["before"] = before_id
+    sql += " ORDER BY t.created_at DESC, t.id DESC LIMIT :lim"
+    params["lim"] = limit + 1
+    rows = (await session.execute(text(sql), params)).mappings().all()
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    next_before = rows[-1]["id"] if has_more and rows else None
+    trades = [
+        {
+            "id": t["id"], "trader": t["display_name"], "side": t["side"],
+            "action": t["action"], "shares": decimal_shares(t["shares"]),
+            "priceCents": t["price_cents"], "amountCents": int(t["amount_cents"]),
+            "at": t["created_at"].isoformat(),
+        }
+        for t in rows
+    ]
+    return trades, next_before
+
+
+async def _history_page(
+    session: AsyncSession, market_id: int, limit: int, before_id: int | None
+) -> tuple[list[dict], int | None]:
+    """Oldest-to-newest window of price history ending at `before_id` — the
+    chart consumes chronological order, pagination walks backwards."""
+    sql = "SELECT id, price_cents, created_at FROM price_history WHERE market_id = :m"
+    params: dict[str, Any] = {"m": market_id}
+    if before_id is not None:
+        sql += " AND id < :before"
+        params["before"] = before_id
+    sql += " ORDER BY id DESC LIMIT :lim"
+    params["lim"] = limit + 1
+    rows = (await session.execute(text(sql), params)).mappings().all()
+    has_more = len(rows) > limit
+    rows = list(reversed(rows[:limit]))
+    next_before = rows[0]["id"] if has_more and rows else None
+    history = [{"price": r["price_cents"], "at": r["created_at"].isoformat()} for r in rows]
+    return history, next_before
 
 
 # ------------------------------ list + create ------------------------------
@@ -149,20 +204,12 @@ async def market_detail(
     if m is None:
         raise HTTPException(404, "Market not found.")
 
-    history = (
-        await session.execute(
-            text("SELECT price_cents, created_at FROM price_history "
-                 "WHERE market_id = :m ORDER BY created_at, id"),
-            {"m": m["id"]},
-        )
-    ).mappings().all()
-    trades = (
-        await session.execute(
-            text("SELECT t.*, u.display_name FROM trades t JOIN users u ON u.id = t.user_id "
-                 "WHERE t.market_id = :m ORDER BY t.created_at DESC, t.id DESC LIMIT 25"),
-            {"m": m["id"]},
-        )
-    ).mappings().all()
+    history, history_next = await _history_page(
+        session, m["id"], HISTORY_PAGE_DEFAULT, None
+    )
+    trades, trades_next = await _trades_page(
+        session, m["id"], TRADES_PAGE_DEFAULT, None
+    )
     holders = (
         await session.execute(
             text("SELECT p.side, p.shares, u.display_name FROM positions p "
@@ -189,16 +236,10 @@ async def market_detail(
     return {
         "market": market_view(
             m,
-            history=[{"price": h["price_cents"], "at": h["created_at"].isoformat()} for h in history],
-            trades=[
-                {
-                    "id": t["id"], "trader": t["display_name"], "side": t["side"],
-                    "action": t["action"], "shares": decimal_shares(t["shares"]),
-                    "priceCents": t["price_cents"], "amountCents": int(t["amount_cents"]),
-                    "at": t["created_at"].isoformat(),
-                }
-                for t in trades
-            ],
+            history=history,
+            trades=trades,
+            tradesNextBeforeId=trades_next,
+            historyNextBeforeId=history_next,
             holders=[
                 {"trader": h["display_name"], "side": h["side"], "shares": round(float(h["shares"]), 1)}
                 for h in holders
@@ -209,6 +250,34 @@ async def market_detail(
             depth=B,
         )
     }
+
+
+@router.get("/markets/{slug}/trades")
+async def market_trades(
+    slug: str,
+    limit: int = Query(TRADES_PAGE_DEFAULT, ge=1, le=TRADES_PAGE_MAX),
+    before_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    m = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
+    if m is None:
+        raise HTTPException(404, "Market not found.")
+    trades, next_before = await _trades_page(session, m["id"], limit, before_id)
+    return {"trades": trades, "nextBeforeId": next_before}
+
+
+@router.get("/markets/{slug}/history")
+async def market_history(
+    slug: str,
+    limit: int = Query(HISTORY_PAGE_DEFAULT, ge=1, le=HISTORY_PAGE_MAX),
+    before_id: int | None = None,
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    m = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
+    if m is None:
+        raise HTTPException(404, "Market not found.")
+    history, next_before = await _history_page(session, m["id"], limit, before_id)
+    return {"history": history, "nextBeforeId": next_before}
 
 
 # ------------------------------ orders (fills) ------------------------------

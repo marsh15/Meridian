@@ -1,6 +1,8 @@
 import {
+  HistoryPageSchema,
   MarketCardSchema,
   MarketDetailSchema,
+  TradesPageSchema,
   UserSchema,
   type User,
 } from "./schemas";
@@ -44,6 +46,16 @@ export const api = {
     req(`/api/markets/${slug}`, (raw) => ({
       market: MarketDetailSchema.parse((raw as { market: unknown }).market),
     })),
+  marketTrades: (slug: string, beforeId?: number) =>
+    req(
+      `/api/markets/${slug}/trades${beforeId != null ? `?before_id=${beforeId}` : ""}`,
+      (raw) => TradesPageSchema.parse(raw),
+    ),
+  marketHistory: (slug: string, beforeId?: number) =>
+    req(
+      `/api/markets/${slug}/history${beforeId != null ? `?before_id=${beforeId}` : ""}`,
+      (raw) => HistoryPageSchema.parse(raw),
+    ),
   createMarket: (body: object) =>
     req("/api/markets", (raw) => raw as { market: { slug: string } }, {
       method: "POST",

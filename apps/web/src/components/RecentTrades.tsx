@@ -1,9 +1,43 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { api } from "@/lib/api";
 import { timeAgo, fmtMoney } from "@/lib/format";
-import type { MarketDetail } from "@/lib/schemas";
+import type { MarketDetail, Trade } from "@/lib/schemas";
 
 export default function RecentTrades({ market }: { market: MarketDetail }) {
-  const trades = market.trades ?? [];
+  // older pages walked via keyset pagination; the embedded page is the
+  // newest window and refreshes with the market query
+  const [older, setOlder] = useState<Trade[]>([]);
+  const [nextBefore, setNextBefore] = useState<number | null>(market.tradesNextBeforeId);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setOlder([]);
+    setNextBefore(market.tradesNextBeforeId);
+  }, [market.slug]);
+
+  const trades = useMemo(() => {
+    const byId = new Map(older.map((t) => [t.id, t]));
+    for (const t of market.trades ?? []) byId.set(t.id, t);
+    return [...byId.values()].sort((a, b) => b.id - a.id);
+  }, [older, market.trades]);
+
   const holders = market.holders ?? [];
+
+  async function showMore() {
+    if (loading || nextBefore == null) return;
+    setLoading(true);
+    try {
+      const page = await api.marketTrades(market.slug, nextBefore);
+      setOlder((prev) => [...prev, ...page.trades]);
+      setNextBefore(page.nextBeforeId);
+    } catch {
+      setNextBefore(null); // stop offering the walk on failure
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <div className="card about-card trades-card">
@@ -25,6 +59,13 @@ export default function RecentTrades({ market }: { market: MarketDetail }) {
               <span className="tt-trader">{t.trader}</span>
             </div>
           ))}
+          {nextBefore != null && (
+            <div className="load-more">
+              <button className="btn-mini" onClick={showMore} disabled={loading}>
+                {loading ? "Loading…" : "Show more"}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="holders-list">

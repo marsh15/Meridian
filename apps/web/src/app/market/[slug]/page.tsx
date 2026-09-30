@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,6 +8,7 @@ import { api } from "@/lib/api";
 import { fmtVol, fmtDate } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
 import { useMarketStream } from "@/hooks/useMarketStream";
+import type { HistoryPoint, MarketDetail } from "@/lib/schemas";
 import PriceChart from "@/components/PriceChart";
 import TradePanel from "@/components/TradePanel";
 import PositionCard from "@/components/PositionCard";
@@ -162,16 +163,7 @@ export default function MarketDetail() {
             </div>
           </div>
 
-          <div className="card chart-card">
-            <div className="chart-head">
-              <span className="chart-title">Yes price · history</span>
-              <span className="chart-range">
-                {fmtDate(market.history?.[0]?.at || market.createdAt)} —{" "}
-                {fmtDate(market.history?.[market.history.length - 1]?.at || market.closesAt)}
-              </span>
-            </div>
-            <PriceChart history={market.history} />
-          </div>
+          <ChartCard market={market} />
 
           <div className="card about-card">
             <h3>About this market</h3>
@@ -237,6 +229,59 @@ export default function MarketDetail() {
         </div>
       )}
     </main>
+  );
+}
+
+function ChartCard({ market }: { market: MarketDetail }) {
+  // price history is paginated newest-window-first; "Show earlier" walks
+  // backwards through keyset pages and prepends to the chart
+  const [older, setOlder] = useState<HistoryPoint[]>([]);
+  const [nextBefore, setNextBefore] = useState<number | null>(market.historyNextBeforeId);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setOlder([]);
+    setNextBefore(market.historyNextBeforeId);
+  }, [market.slug]);
+
+  const history = useMemo(() => {
+    const byAt = new Map(older.map((h) => [h.at, h]));
+    for (const h of market.history ?? []) byAt.set(h.at, h);
+    return [...byAt.values()].sort((a, b) => a.at.localeCompare(b.at));
+  }, [older, market.history]);
+
+  async function showEarlier() {
+    if (loading || nextBefore == null) return;
+    setLoading(true);
+    try {
+      const page = await api.marketHistory(market.slug, nextBefore);
+      setOlder((prev) => [...prev, ...page.history]);
+      setNextBefore(page.nextBeforeId);
+    } catch {
+      setNextBefore(null); // stop offering the walk on failure
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="card chart-card">
+      <div className="chart-head">
+        <span className="chart-title">Yes price · history</span>
+        <span className="chart-range">
+          {fmtDate(history[0]?.at || market.createdAt)} —{" "}
+          {fmtDate(history[history.length - 1]?.at || market.closesAt)}
+        </span>
+      </div>
+      <PriceChart history={history} />
+      {nextBefore != null && (
+        <div className="load-more">
+          <button className="btn-mini" onClick={showEarlier} disabled={loading}>
+            {loading ? "Loading…" : "Show earlier"}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 

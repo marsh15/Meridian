@@ -58,6 +58,8 @@ export const PositionSideSchema = z.object({
 export const MarketDetailSchema = MarketSummarySchema.extend({
   history: z.array(z.object({ price: z.number(), at: z.string() })),
   trades: z.array(TradeSchema),
+  tradesNextBeforeId: z.number().nullable(),
+  historyNextBeforeId: z.number().nullable(),
   holders: z.array(HolderSchema),
   yourPosition: z
     .object({ yes: PositionSideSchema, no: PositionSideSchema })
@@ -65,6 +67,18 @@ export const MarketDetailSchema = MarketSummarySchema.extend({
   isCreator: z.boolean(),
   q: z.object({ yes: z.number(), no: z.number() }),
   depth: z.number(),
+});
+
+export const HistoryPointSchema = z.object({ price: z.number(), at: z.string() });
+
+export const TradesPageSchema = z.object({
+  trades: z.array(TradeSchema),
+  nextBeforeId: z.number().nullable(),
+});
+
+export const HistoryPageSchema = z.object({
+  history: z.array(HistoryPointSchema),
+  nextBeforeId: z.number().nullable(),
 });
 
 export const TickSchema = z.object({
@@ -81,3 +95,5 @@ export type MarketSummary = z.infer<typeof MarketSummarySchema>;
 export type MarketCardData = z.infer<typeof MarketCardSchema>;
 export type MarketDetail = z.infer<typeof MarketDetailSchema>;
 export type Tick = z.infer<typeof TickSchema>;
+export type Trade = z.infer<typeof TradeSchema>;
+export type HistoryPoint = z.infer<typeof HistoryPointSchema>;

@@ -1750,3 +1750,10 @@ button {
     transform: none;
   }
 }
+
+/* keyset-pagination load-more rows (recent trades, chart history) */
+.load-more {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 2px;
+}
