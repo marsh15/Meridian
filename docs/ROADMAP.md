@@ -14,18 +14,23 @@ unlocks it.
 | API | Python · FastAPI · Pydantic v2 · SQLAlchemy 2.0 async (asyncpg) · Alembic · uv |
 | Money | BIGINT cents + NUMERIC(24,10) shares, Decimal end-to-end (ADR 0005) |
 | Realtime | SSE + Postgres LISTEN/NOTIFY (ADR 0004) |
-| Events | Transactional outbox table (ADR 0006) |
+| Events | Transactional outbox table → Kafka relay + consumer groups (ADR 0006, phase 2 shipped) |
 | Store | PostgreSQL 16 (Docker) |
 | Tests | pytest (AMM invariants, concurrency, auth) |
 | Dev | Docker Compose for infra, apps on host |
 
-## Phase 2 — Event backbone (trigger: first machine consumer)
+## Phase 2 — Event backbone (shipped)
 
-- **Kafka** (single-node KRaft in compose): outbox→Kafka relay publishing
-  `exchange.trade-events` / `exchange.market-events` keyed by market_id
-  (per-market ordering via partition key). First consumers: candle builder,
-  analytics table, live-volume projector.
-- Alternative trigger: needing replay/backfill of consumer state.
+Kafka (single-node KRaft in compose) carries the outbox relay's
+`exchange.trade-events` / `exchange.market-events`, keyed by market_id so
+per-market order survives the hop. Three consumer groups build the first
+read models: the candle builder (1-minute OHLCV + settlement candle),
+the live-volume projector (`market_stats`), and the analytics fact table.
+Delivery semantics — dual-write avoidance, at-least-once delivery,
+effectively-once application, DLQ policy, crash-window table — are in
+[docs/failure-model.md](failure-model.md), the phase's centerpiece.
+Still in this phase's spirit, unlocked by need: replay tooling for
+derived tables and `processed_events` compaction.
 
 ## Phase 3 — Market lifecycle workflows (trigger: settlement grows external waits)
 
@@ -56,7 +61,7 @@ unlocks it.
 - **Observability**: OTel SDK → collector → Prometheus/Grafana/Tempo, k6
   load profile for the order path.
 - pnpm workspaces + Turborepo when a second JS package (shared contracts)
-  appears; GitHub Actions CI on the test suites.
+  appears; GitHub Actions CI already runs the test suites on every push.
 - Deployment: Fly/Railway/Render single node + managed Postgres; the stack
   is deliberately single-process-friendly until Phase 5 says otherwise.
 

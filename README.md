@@ -11,7 +11,7 @@ market maker, instant fills, live prices over SSE, play money.
 | API | Python · FastAPI · Pydantic v2 · SQLAlchemy 2.0 async (asyncpg) · Alembic · uv |
 | Data | PostgreSQL 16 — BIGINT cents + NUMERIC(24,10) shares |
 | Realtime | SSE + Postgres LISTEN/NOTIFY (`/api/stream`, `/api/markets/{slug}/stream`) |
-| Events | Transactional outbox (`outbox_events`) — Kafka relay is the next phase |
+| Events | Transactional outbox → Kafka relay → candles · volume · analytics consumers — [failure model](docs/failure-model.md) |
 | Tests | pytest (API core) · Vitest (AMM mirror vs Python fixtures) · Playwright (signup→trade→resolve) |
 
 Decisions are recorded in [docs/adr/](docs/adr/); the phased target
@@ -32,11 +32,17 @@ this machine). First run installs web dependencies automatically; Ctrl-C
 (`db`, `api`, `web`, `migrate`, `seed`, `down`) for running them alone.
 
 ```bash
-make test        # API: AMM math, money, concurrency, idempotency, sweeper, pagination
+make test        # API: AMM math, money, concurrency, idempotency, sweeper, pagination, relay, consumers
 make typecheck   # web: tsc --noEmit
 make test-unit   # web: Vitest — lib/amm.ts mirror against Python-engine fixtures
 make test-e2e    # web: Playwright happy path (signup → trade → resolve); boots the stack
 ```
+
+The event backbone runs alongside: `make db` brings up Postgres + Kafka
+(single-node KRaft), `make events` runs the outbox→Kafka relay and the
+three consumers (candles, volume, analytics) together. The full delivery
+contract — dual-write avoidance, at-least-once, effectively-once
+application, DLQ policy — is [docs/failure-model.md](docs/failure-model.md).
 
 CI (`.github/workflows/ci.yml`) runs pytest and tsc + Vitest on every push.
 
@@ -44,8 +50,8 @@ CI (`.github/workflows/ci.yml`) runs pytest and tsc + Vitest on every push.
 
 ```
 apps/web/        Next.js client (components ported from v0.2, design CSS kept verbatim)
-services/api/    FastAPI service (app/, alembic/, tests/)
-docs/            ADRs + ROADMAP
+services/api/    FastAPI service (app/, alembic/, tests/) + relay/ + consumers/
+docs/            ADRs + ROADMAP + failure model
 ```
 
 ## How the interesting parts work
@@ -58,8 +64,11 @@ docs/            ADRs + ROADMAP
 - **Live prices** — the trade transaction fires `pg_notify('market_ticks', …)`,
   delivered by Postgres on commit; each SSE tab holds one LISTEN connection
   and filters by slug. No Redis, no socket server, free-tier friendly.
-- **Events** — the same transaction appends to `outbox_events`, so a later
-  Kafka relay can publish domain events with zero dual-write risk.
+- **Events** — the same transaction appends to `outbox_events`; the relay
+  publishes those rows to Kafka keyed by market_id (per-market total
+  order), and consumer groups build candles, live volume, and analytics
+  facts with effectively-once application. The whole failure model is
+  [docs/failure-model.md](docs/failure-model.md).
 - **Idempotent orders** — clients send an `Idempotency-Key` header; the
   `(user, key)` row is written in the trade's own transaction with a hash of
   the request and the exact response body, so a replayed or racing duplicate
