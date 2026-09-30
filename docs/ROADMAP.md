@@ -1,0 +1,68 @@
+# Meridian — Target Architecture & Phased Roadmap
+
+North star: a portfolio-grade prediction exchange — correct money, live
+prices, and an architecture where every box on the diagram earns its place.
+Rule (borrowed and enforced): **no technology gets added merely because it
+looks impressive on the README.** Each phase below lists the trigger that
+unlocks it.
+
+## Locked stack (now built)
+
+| Layer | Choice |
+|---|---|
+| Web | Next.js 15 (App Router) + TypeScript + TanStack Query + Zod, bespoke CSS design system (kept from v0.2) |
+| API | Python · FastAPI · Pydantic v2 · SQLAlchemy 2.0 async (asyncpg) · Alembic · uv |
+| Money | BIGINT cents + NUMERIC(24,10) shares, Decimal end-to-end (ADR 0005) |
+| Realtime | SSE + Postgres LISTEN/NOTIFY (ADR 0004) |
+| Events | Transactional outbox table (ADR 0006) |
+| Store | PostgreSQL 16 (Docker) |
+| Tests | pytest (AMM invariants, concurrency, auth) |
+| Dev | Docker Compose for infra, apps on host |
+
+## Phase 2 — Event backbone (trigger: first machine consumer)
+
+- **Kafka** (single-node KRaft in compose): outbox→Kafka relay publishing
+  `exchange.trade-events` / `exchange.market-events` keyed by market_id
+  (per-market ordering via partition key). First consumers: candle builder,
+  analytics table, live-volume projector.
+- Alternative trigger: needing replay/backfill of consumer state.
+
+## Phase 3 — Market lifecycle workflows (trigger: settlement grows external waits)
+
+- **Temporal**: close → freeze → await resolution input → settle → notify →
+  reconcile. Today settlement is a single transaction; it earns a workflow
+  engine when steps gain timers, human approval, or retries across services.
+- Double-entry ledger (`ledger_accounts`, `ledger_entries`) with a
+  reconciliation query proving Σ debits == Σ credits; balances become a
+  derived projection.
+
+## Phase 4 — Product surface
+
+- Lightweight Charts for probability history with range switcher + event
+  markers (replaces the hand-rolled SVG chart when ranges/markers land).
+- Portfolio terminal page (positions table with live P&L), leaderboard,
+  user pages, command palette (⌘K), keyboard trading.
+- Design-system pass: Tailwind + shadcn/Base UI only if component count
+  outgrows the current CSS — the bespoke look is the asset, not a liability.
+
+## Phase 5 — Scale & ops (trigger: real users / real load)
+
+- **Redis**: hot-market cache, rate limiting, SSE fan-out for multi-instance.
+- **Native WebSockets** with snapshot+delta+sequence protocol (the SSE
+  events already carry sequence numbers) — when two-way or high-frequency
+  book updates exist (i.e., if ADR 0001 is revisited for a CLOB).
+- **Go**: only for a CLOB matching engine (deterministic, price-time
+  priority, per-market sequencing). Not applicable while fills are LMSR.
+- **Observability**: OTel SDK → collector → Prometheus/Grafana/Tempo, k6
+  load profile for the order path.
+- pnpm workspaces + Turborepo when a second JS package (shared contracts)
+  appears; GitHub Actions CI on the test suites.
+- Deployment: Fly/Railway/Render single node + managed Postgres; the stack
+  is deliberately single-process-friendly until Phase 5 says otherwise.
+
+## Phase 6 — Intelligence (trigger: exchange core stable)
+
+- Market briefs: retrieval → rerank → LLM → structured brief with citations
+  (bull/bear cases, catalysts, source quality).
+- "Explain this move": chart range selection → time-boxed source retrieval
+  → narrative. Event timeline overlays on the chart.

@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: meridian-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meridian
+      POSTGRES_PASSWORD: meridian
+      POSTGRES_DB: meridian
+    ports:
+      # host 5434 — 5432 and 5433 are both taken by a local Postgres
+      - "5434:5432"
+    volumes:
+      - meridian-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meridian -d meridian"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  meridian-pgdata:
