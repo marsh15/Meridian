@@ -19,7 +19,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.amm import B, opening_q, price_yes, proceeds_for_shares, shares_for_dollars
-from app.config import CATEGORIES
+from app.config import CATEGORIES, settings
 from app.db import get_session
 from app.deps import current_user, require_user
 from app.events import record_event
@@ -529,65 +529,37 @@ async def resolve_market(
     if body.outcome not in ("yes", "no"):
         raise HTTPException(400, "Outcome must be yes or no.")
 
-    async with session.begin():
-        row = (
-            await session.execute(
-                text("SELECT * FROM markets WHERE slug = :slug FOR UPDATE"), {"slug": slug}
-            )
-        ).first()
-        if row is None:
-            raise HTTPException(404, "Market not found.")
-        m = row._mapping
-        if m["creator_id"] != user["id"]:
-            raise HTTPException(403, "Only the market creator can resolve.")
-        if m["status"] == "resolved":
+    m = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
+    if m is None:
+        raise HTTPException(404, "Market not found.")
+    if m["creator_id"] != user["id"]:
+        raise HTTPException(403, "Only the market creator can resolve.")
+    if m["status"] == "resolved":
+        raise HTTPException(400, "Market is already resolved.")
+
+    # settlement is durable execution (ADR 0008): the workflow owns
+    # resolution → settlement → payout → notify. "inline" mode runs the
+    # identical functions in-process for tests without a worker.
+    if settings.settlement_mode == "temporal":
+        from temporalio.service import RPCError
+
+        from app.temporal_client import SettlementUnavailable, request_resolution
+
+        try:
+            await request_resolution(m, body.outcome)
+        except SettlementUnavailable as err:
+            raise HTTPException(503, str(err))
+        except (RPCError, OSError) as err:
+            raise HTTPException(503, f"Settlement worker unreachable: {err}")
+    else:
+        from app.market_lifecycle import LifecycleError, settle_market
+
+        try:
+            await settle_market(m["id"], body.outcome)
+        except LifecycleError as err:
+            if err.reason == "not_found":
+                raise HTTPException(404, "Market not found.")
             raise HTTPException(400, "Market is already resolved.")
-        # resolving is allowed from 'open' (early) and 'closed' (the sweeper
-        # already transitioned it — this is the normal path)
-
-        await session.execute(
-            text("UPDATE markets SET status = 'resolved', outcome = :o WHERE id = :id"),
-            {"o": body.outcome, "id": m["id"]},
-        )
-        await session.execute(
-            text("INSERT INTO price_history (market_id, price_cents) VALUES (:m, :p)"),
-            {"m": m["id"], "p": 100 if body.outcome == "yes" else 0},
-        )
-        seq = (await session.execute(
-            text("UPDATE markets SET event_seq = event_seq + 1 WHERE id = :id RETURNING event_seq"),
-            {"id": m["id"]},
-        )).scalar_one()
-
-        winners = (
-            await session.execute(
-                text("SELECT * FROM positions WHERE market_id = :m AND side = :s AND shares > 0"),
-                {"m": m["id"], "s": body.outcome},
-            )
-        ).mappings().all()
-        payouts: list[tuple[int, int]] = []
-        for p in winners:
-            payout = int(Decimal(p["shares"]) * 100)
-            await session.execute(
-                text("UPDATE users SET balance_cents = balance_cents + :pay WHERE id = :id"),
-                {"pay": payout, "id": p["user_id"]},
-            )
-            payouts.append((p["user_id"], payout))
-        # winning shares became cash, losing shares expired — clear the book
-        await session.execute(
-            text("UPDATE positions SET shares = 0, cost_cents = 0 WHERE market_id = :m"),
-            {"m": m["id"]},
-        )
-        await ledger.post_payouts(session, m["id"], payouts)
-        await record_event(
-            session,
-            aggregate=f"market:{slug}",
-            event_type="MarketResolved",
-            payload={"slug": slug, "seq": seq, "outcome": body.outcome,
-                     "winnersPaid": len(winners)},
-            notify={"type": "tick", "slug": slug, "seq": seq,
-                    "price": 100 if body.outcome == "yes" else 0,
-                    "status": "resolved", "outcome": body.outcome},
-        )
 
     fresh = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
     return {"market": market_view(fresh)}

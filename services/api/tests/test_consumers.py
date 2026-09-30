@@ -136,16 +136,15 @@ async def test_volume_projector_tracks_lifecycle(client, alice):
     assert stats["last_price_cents"] == trades[-1]["payload"]["priceCents"]
     assert stats["last_event_at"] is not None
 
-    # close + resolve through the real endpoints, project those events
+    # close + resolve through the real lifecycle, project those events
     from sqlalchemy import text as t
 
     async with engine.begin() as conn:
-        await conn.execute(t("UPDATE markets SET closes_at = now() - interval '1 hour' "
-                             "WHERE slug = :s"), {"s": slug})
-    from app.sweeper import close_expired_markets
+        mid = (await conn.execute(t("SELECT id FROM markets WHERE slug = :s"),
+                                  {"s": slug})).scalar_one()
+    from app.market_lifecycle import close_market
 
-    async with SessionFactory() as session:
-        await close_expired_markets(session)
+    assert await close_market(mid) is True
     res = await client.post(f"/api/markets/{slug}/resolve", json={"outcome": "no"})
     assert res.status_code == 200
 

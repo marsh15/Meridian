@@ -12,8 +12,6 @@ class Settings(BaseSettings):
     start_balance_cents: int = 100_000
     # prod: CORS_ORIGINS=https://your-deployed-origin (comma-separated)
     cors_origins: str = "http://localhost:3001"
-    # seconds between market-close sweeps; 0 disables the background task
-    market_sweep_interval_s: int = 30
     # event backbone (relay + consumers are separate processes; the API
     # itself never touches Kafka — see docs/failure-model.md)
     kafka_bootstrap_servers: str = "localhost:9092"

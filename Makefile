@@ -31,6 +31,9 @@ consumers: ## The three Kafka consumers (candles, volume, analytics)
 events: ## Relay + consumers together (Ctrl-C stops both)
 	./scripts/events.sh
 
+worker: ## Temporal lifecycle worker (needs make db up)
+	cd services/api && uv run python -m worker
+
 api: ## API only, with reload (assumes Postgres is up: make db)
 	cd services/api && uv run uvicorn app.main:app --reload --port $(API_PORT)
 
@@ -56,4 +59,4 @@ test-e2e: ## Web e2e (Playwright happy path; boots the stack itself)
 	cd apps/web && npm run test:e2e
 
 .PHONY: help dev db down api web migrate seed test typecheck test-unit test-e2e \
-	kafka-topics kafka-dump relay consumers events
+	kafka-topics kafka-dump relay consumers events worker

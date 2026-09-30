@@ -41,6 +41,10 @@ echo "==> web  http://localhost:3001"
 (cd apps/web && exec npm run dev) &
 pids+=($!)
 
+echo "==> worker  temporal lifecycle (auto-close timers, durable settlement)"
+(cd services/api && exec uv run python -m worker) &
+pids+=($!)
+
 # when either process dies, take the other with it
 while kill -0 "${pids[@]}" >/dev/null 2>&1; do
   sleep 1
