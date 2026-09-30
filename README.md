@@ -21,22 +21,19 @@ architecture (Kafka, Temporal, ledger, charts, AI layer) is in
 ## Run it
 
 ```bash
-docker compose up -d --wait          # Postgres on :5434
-
-cd services/api
-uv sync
-uv run alembic upgrade head          # adopts/creates schema, converts shares to NUMERIC
-uv run python -m app.seed            # demo world (idempotent)
-uv run uvicorn app.main:app --reload --port 8393
-
-cd apps/web
-npm install
-npm run dev                          # http://localhost:3001 (3000 was taken on this machine)
+make dev
 ```
 
+One command from cold start: Postgres on `:5434` (docker compose, waits for
+healthy), Alembic migrations, the idempotent demo seed, the API on
+`:8393`, and the web app on **http://localhost:3001** (3000 was taken on
+this machine). First run installs web dependencies automatically; Ctrl-C
+(or either process dying) stops everything. `make help` lists the pieces
+(`db`, `api`, `web`, `migrate`, `seed`, `down`) for running them alone.
+
 ```bash
-cd services/api && uv run pytest     # 18 tests: math, money, concurrency, SSE mechanics
-cd apps/web && npx tsc --noEmit      # typecheck
+make test        # 18 tests: math, money, concurrency, SSE mechanics
+make typecheck   # web: tsc --noEmit
 ```
 
 ## Layout
@@ -45,7 +42,6 @@ cd apps/web && npx tsc --noEmit      # typecheck
 apps/web/        Next.js client (components ported from v0.2, design CSS kept verbatim)
 services/api/    FastAPI service (app/, alembic/, tests/)
 docs/            ADRs + ROADMAP
-server/, src/    v0.2 Express + Vite app — superseded, kept as reference; safe to delete
 ```
 
 ## How the interesting parts work
@@ -61,8 +57,10 @@ server/, src/    v0.2 Express + Vite app — superseded, kept as reference; safe
 - **Events** — the same transaction appends to `outbox_events`, so a later
   Kafka relay can publish domain events with zero dual-write risk.
 
-## Legacy
+## History
 
-`server/` (Express) and `src/` (Vite SPA) are the v0.2 implementation this
-repo migrated from (ADR 0003). Password hashes are scrypt-compatible across
-both — accounts created before the migration still log in.
+v0.2 was an Express + Vite SPA; ADR 0003 records the port to FastAPI +
+Next.js. Password hashes are scrypt-compatible across both, so accounts
+created before the migration still log in. The old `server/` and `src/`
+trees were deleted once the port was verified — they live on in git
+history.

@@ -2,8 +2,8 @@ import path from "node:path";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // multiple lockfiles exist in this repo's history; pin the root so Next
-  // doesn't infer the wrong workspace
+  // pin the tracing root to this app so Next doesn't infer a workspace
+  // parent (the pre-monorepo layout had stray lockfiles at the repo root)
   outputFileTracingRoot: path.join(__dirname),
   async rewrites() {
     // API + SSE live on the FastAPI service in dev and behind the same
