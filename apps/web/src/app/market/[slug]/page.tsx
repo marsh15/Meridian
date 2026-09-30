@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,8 +8,8 @@ import { api } from "@/lib/api";
 import { fmtVol, fmtDate } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
 import { useMarketStream } from "@/hooks/useMarketStream";
-import type { HistoryPoint, MarketDetail } from "@/lib/schemas";
-import PriceChart from "@/components/PriceChart";
+import type { MarketDetail } from "@/lib/schemas";
+import MarketChart from "@/components/MarketChart";
 import TradePanel from "@/components/TradePanel";
 import PositionCard from "@/components/PositionCard";
 import RecentTrades from "@/components/RecentTrades";
@@ -232,55 +232,72 @@ export default function MarketDetail() {
   );
 }
 
+const CHART_RANGES = [
+  { id: "1h", label: "1H" },
+  { id: "6h", label: "6H" },
+  { id: "1d", label: "1D" },
+  { id: "1w", label: "1W" },
+  { id: "1m", label: "1M" },
+  { id: "all", label: "ALL" },
+] as const;
+
+type ChartRangeId = (typeof CHART_RANGES)[number]["id"];
+
 function ChartCard({ market }: { market: MarketDetail }) {
-  // price history is paginated newest-window-first; "Show earlier" walks
-  // backwards through keyset pages and prepends to the chart
-  const [older, setOlder] = useState<HistoryPoint[]>([]);
-  const [nextBefore, setNextBefore] = useState<number | null>(market.historyNextBeforeId);
-  const [loading, setLoading] = useState(false);
+  // server-bucketed OHLCV per range; ticks patch the last candle live
+  // (market.price is kept fresh by the SSE stream) instead of refetching
+  const [range, setRange] = useState<ChartRangeId>("1d");
 
-  useEffect(() => {
-    setOlder([]);
-    setNextBefore(market.historyNextBeforeId);
-  }, [market.slug]);
+  const { data, isLoading } = useQuery({
+    queryKey: ["market", market.slug, "candles", range],
+    queryFn: () => api.marketCandles(market.slug, range),
+  });
 
-  const history = useMemo(() => {
-    const byAt = new Map(older.map((h) => [h.at, h]));
-    for (const h of market.history ?? []) byAt.set(h.at, h);
-    return [...byAt.values()].sort((a, b) => a.at.localeCompare(b.at));
-  }, [older, market.history]);
-
-  async function showEarlier() {
-    if (loading || nextBefore == null) return;
-    setLoading(true);
-    try {
-      const page = await api.marketHistory(market.slug, nextBefore);
-      setOlder((prev) => [...prev, ...page.history]);
-      setNextBefore(page.nextBeforeId);
-    } catch {
-      setNextBefore(null); // stop offering the walk on failure
-    } finally {
-      setLoading(false);
-    }
-  }
+  const candles = data?.candles ?? [];
+  const intraday = range === "1h" || range === "6h" || range === "1d";
+  const fmtTs = (t: number) =>
+    intraday
+      ? new Date(t * 1000).toLocaleString("en-US", {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+        })
+      : fmtDate(new Date(t * 1000).toISOString());
+  const from = candles[0] != null ? fmtTs(candles[0].t) : fmtDate(market.createdAt);
+  const to =
+    candles[candles.length - 1] != null
+      ? fmtTs(candles[candles.length - 1].t)
+      : fmtDate(market.closesAt);
 
   return (
     <div className="card chart-card">
       <div className="chart-head">
-        <span className="chart-title">Yes price · history</span>
-        <span className="chart-range">
-          {fmtDate(history[0]?.at || market.createdAt)} —{" "}
-          {fmtDate(history[history.length - 1]?.at || market.closesAt)}
-        </span>
-      </div>
-      <PriceChart history={history} />
-      {nextBefore != null && (
-        <div className="load-more">
-          <button className="btn-mini" onClick={showEarlier} disabled={loading}>
-            {loading ? "Loading…" : "Show earlier"}
-          </button>
+        <div className="chart-meta">
+          <span className="chart-title">Yes price</span>
+          <span className="chart-range">
+            {from} — {to}
+          </span>
         </div>
-      )}
+        <div className="chips chart-ranges" role="group" aria-label="Chart time range">
+          {CHART_RANGES.map((r) => (
+            <button
+              key={r.id}
+              className={`chip chart-chip ${range === r.id ? "active" : ""}`}
+              aria-pressed={range === r.id}
+              onClick={() => setRange(r.id)}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <MarketChart
+        candles={candles}
+        markers={data?.markers ?? []}
+        livePrice={market.price}
+        resolvedOutcome={market.outcome}
+        emptyMessage={isLoading ? "Loading chart…" : "No trades in this window yet."}
+      />
     </div>
   );
 }

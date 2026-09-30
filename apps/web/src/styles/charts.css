@@ -1,2 +1,52 @@
 /* phase 4 — charts track styles; kept separate so parallel work never
    touches app.css (imported at the top of app.css) */
+
+/* lightweight-charts mount point. The canvas paints itself transparent so
+   the card surface and the body's paper grain read through the chart —
+   the same openness the old SVG had. Price pane and volume pane split
+   (3:1) is handled by the library; only the outer box lives here. */
+.chart-lwc {
+  position: relative;
+  height: 340px;
+  margin: 4px 0 8px;
+}
+
+/* empty/loading overlay — reuses .chart-empty from app.css, retargeted
+   from a standalone block to an absolute veil over the mount point */
+.chart-lwc .chart-empty {
+  position: absolute;
+  inset: 0;
+  height: auto;
+}
+
+/* title + date span stack on the left of the chart head */
+.chart-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* range switcher — the app's chips, compacted to sit in the chart head
+   without competing with the title */
+.chart-ranges {
+  gap: 5px;
+  margin-left: auto;
+}
+
+.chart-chip {
+  padding: 5px 11px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  border-radius: var(--radius-sm);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 560px) {
+  .chart-lwc {
+    height: 280px;
+  }
+  .chart-ranges {
+    margin-left: 0;
+  }
+}
