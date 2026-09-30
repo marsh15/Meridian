@@ -159,6 +159,17 @@ through the outbox, not parked in a queue.
 | Handler raises twice | Message dead-lettered, offset advances | Operator: fix, replay from outbox |
 | New event type, relay not taught | Row stuck unpublished, error logged each cycle | Operator: extend `topic_for` |
 | Kafka down | Relay cycle fails, rows stay unpublished | Kafka restart; relay drains backlog |
+| Worker dies mid-settlement | Activity retry or workflow continues after restart | Temporal (durable execution) |
+| Temporal down | Resolve endpoint returns 503; close timers pause | Temporal restart; timers resume where they left off |
+| Unbalanced ledger post attempted | `post_entries` raises, transaction aborts | Nobody needed — the DB trigger also guards commit |
+
+Settlement durability (ADR 0008): market lifecycle runs as a Temporal
+workflow — the close timer and the wait-for-resolution are durable state,
+not in-process tasks, so worker and server restarts resume exactly where
+the workflow left off. Activities are idempotent (`close_market` is a
+no-op on a non-open market; `settle_market` re-checks status under the
+market row lock), so temporal retries and replays cannot double-pay. The
+outbox rows these transactions write feed this pipeline unchanged.
 
 ## Operating notes
 

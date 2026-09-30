@@ -32,14 +32,19 @@ effectively-once application, DLQ policy, crash-window table — are in
 Still in this phase's spirit, unlocked by need: replay tooling for
 derived tables and `processed_events` compaction.
 
-## Phase 3 — Market lifecycle workflows (trigger: settlement grows external waits)
+## Phase 3 — Lifecycle workflows + ledger (shipped)
 
-- **Temporal**: close → freeze → await resolution input → settle → notify →
-  reconcile. Today settlement is a single transaction; it earns a workflow
-  engine when steps gain timers, human approval, or retries across services.
-- Double-entry ledger (`ledger_accounts`, `ledger_entries`) with a
-  reconciliation query proving Σ debits == Σ credits; balances become a
-  derived projection.
+Market lifecycle is durable execution on Temporal
+([ADR 0008](adr/0008-temporal-lifecycle.md)): a workflow timer closes
+each market at closes_at (the in-process sweeper is gone), the workflow
+waits crash-safely for the creator's resolution signal, and settlement
+runs as idempotent activities over the same transactional functions the
+API can call inline. Money moved onto a double-entry ledger
+([ADR 0007](adr/0007-double-entry-ledger.md)) with a deferred constraint
+trigger that refuses unbalanced journals, balances as a proven
+projection (`/api/ledger/reconcile`), and the leaderboard and portfolio
+reading from the journal. Single-node Temporal lives in compose with its
+own throwaway Postgres; the UI is `docker compose --profile ui up`.
 
 ## Phase 4 — Product surface
 
