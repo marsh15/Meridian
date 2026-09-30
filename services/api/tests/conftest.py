@@ -40,7 +40,7 @@ async def client():
     async with engine.begin() as conn:
         await conn.execute(
             text("TRUNCATE sessions, positions, trades, price_history, outbox_events, "
-                 "markets, users RESTART IDENTITY CASCADE")
+                 "idempotency_keys, markets, users RESTART IDENTITY CASCADE")
         )
 
 

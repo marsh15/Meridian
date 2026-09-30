@@ -5,11 +5,16 @@ import {
   type User,
 } from "./schemas";
 
-async function req<T>(path: string, parse: (raw: unknown) => T, opts: RequestInit = {}): Promise<T> {
+async function req<T>(
+  path: string,
+  parse: (raw: unknown) => T,
+  opts: RequestInit = {},
+): Promise<T> {
+  const { headers, ...rest } = opts;
   const res = await fetch(path, {
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json" },
-    ...opts,
+    ...rest,
+    headers: { "Content-Type": "application/json", ...headers },
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((data as { error?: string }).error || "Request failed");
@@ -44,10 +49,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  order: (slug: string, body: object) =>
+  order: (slug: string, body: object, idempotencyKey?: string) =>
     req(`/api/markets/${slug}/orders`, (raw) => raw, {
       method: "POST",
       body: JSON.stringify(body),
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
     }),
   resolve: (slug: string, outcome: string) =>
     req(`/api/markets/${slug}/resolve`, (raw) => raw, {

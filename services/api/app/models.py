@@ -108,6 +108,24 @@ class PriceHistory(Base):
     )
 
 
+class IdempotencyKey(Base):
+    """One row per (user, key): inserted in the same transaction as the order
+    it dedupes, storing the hashed request and the exact response body so a
+    replayed POST returns the original fill instead of trading again."""
+
+    __tablename__ = "idempotency_keys"
+
+    user_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    key: Mapped[str] = mapped_column(Text, primary_key=True)
+    request_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    response: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
 class OutboxEvent(Base):
     """Transactional outbox (ADR 0006): domain events committed atomically
     with the state change; a later relay publishes unread rows to Kafka."""

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/auth/AuthContext";
 import { api } from "@/lib/api";
@@ -30,6 +30,9 @@ export default function TradePanel({
   const [dollars, setDollars] = useState<number | "">(50);
   const [sellShares, setSellShares] = useState<number | "">(0);
   const [busy, setBusy] = useState(false);
+  // synchronous guard — a double-click fires two handlers before the busy
+  // state re-renders, and each order gets one key so retries dedupe server-side
+  const inFlight = useRef(false);
 
   const tradable = market.status === "open";
   const price = side === "yes" ? market.price : 100 - market.price;
@@ -58,13 +61,19 @@ export default function TradePanel({
   const canSubmit = tradable && !!user && (action === "buy" ? buyOk : sellOk);
 
   async function submit() {
+    if (inFlight.current) return;
+    inFlight.current = true;
     setBusy(true);
     try {
       const body =
         action === "buy"
           ? { side, action, dollarsCents: Math.round(Number(dollars) * 100) }
           : { side, action, shares: Number(sellShares) };
-      const res = (await api.order(market.slug, body)) as unknown as OrderResponse;
+      const res = (await api.order(
+        market.slug,
+        body,
+        crypto.randomUUID(),
+      )) as unknown as OrderResponse;
       setBalanceCents(res.balanceCents);
       setToast(
         `${res.fill.action === "buy" ? "Bought" : "Sold"} ${res.fill.shares} ${side.toUpperCase()} @ ${res.fill.priceCents}¢`,
@@ -76,6 +85,7 @@ export default function TradePanel({
     } catch (err) {
       setToast(err instanceof Error ? err.message : "Request failed", true);
     } finally {
+      inFlight.current = false;
       setBusy(false);
     }
   }

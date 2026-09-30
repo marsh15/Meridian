@@ -3,6 +3,8 @@ of the Express endpoints in server/index.js. Trades serialize on row locks
 (market → user → position) inside one transaction; every fill writes a
 transactional-outbox event and fires pg_notify for the SSE stream."""
 
+import hashlib
+import json
 import math
 import random
 import re
@@ -11,7 +13,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -219,9 +221,19 @@ class OrderBody(BaseModel):
     shares: float | None = None
 
 
+def _order_request_hash(slug: str, body: OrderBody) -> str:
+    payload = json.dumps(
+        {"slug": slug, "side": body.side, "action": body.action,
+         "dollarsCents": body.dollarsCents, "shares": body.shares},
+        sort_keys=True, separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
 @router.post("/markets/{slug}/orders")
 async def place_order(
     slug: str,
+    request: Request,
     body: OrderBody | None = None,
     user: dict = Depends(require_user),
     session: AsyncSession = Depends(get_session),
@@ -232,6 +244,15 @@ async def place_order(
         raise HTTPException(400, "Side must be yes or no.")
     if action not in ("buy", "sell"):
         raise HTTPException(400, "Action must be buy or sell.")
+
+    # Idempotency-Key: a retried POST with the same key returns the original
+    # fill instead of trading again. The key row lives in the trade's
+    # transaction, and ON CONFLICT blocks on an in-flight duplicate until it
+    # commits — concurrent double-clicks serialize for free.
+    idem = (request.headers.get("idempotency-key") or "").strip()
+    if len(idem) > 128:
+        raise HTTPException(400, "Idempotency-Key header too long (max 128).")
+    req_hash = _order_request_hash(slug, body)
 
     async with session.begin():
         row = (
@@ -246,6 +267,29 @@ async def place_order(
             raise HTTPException(400, f"This market resolved {m['outcome']}. No more trading.")
         if m["closes_at"] < datetime.now(timezone.utc):
             raise HTTPException(400, "This market has closed. Awaiting resolution.")
+
+        replayed = None
+        if idem:
+            ins = await session.execute(
+                text("INSERT INTO idempotency_keys (user_id, key, request_hash) "
+                     "VALUES (:u, :k, :h) ON CONFLICT (user_id, key) DO NOTHING"),
+                {"u": user["id"], "k": idem, "h": req_hash},
+            )
+            if ins.rowcount == 0:
+                prev = (
+                    await session.execute(
+                        text("SELECT request_hash, response FROM idempotency_keys "
+                             "WHERE user_id = :u AND key = :k"),
+                        {"u": user["id"], "k": idem},
+                    )
+                ).first()
+                if prev is None or prev.response is None:
+                    raise HTTPException(409, "That order is still processing — retry in a moment.")
+                if prev.request_hash != req_hash:
+                    raise HTTPException(409, "Idempotency key reused with a different order.")
+                replayed = prev.response
+        if replayed is not None:
+            return replayed
 
         urow = (
             await session.execute(
@@ -350,34 +394,45 @@ async def place_order(
                 "slug": m["slug"], "seq": seq, "side": side, "action": action,
                 "shares": float(fill_shares), "priceCents": fill_price_cents,
                 "amountCents": amount_cents, "trader": u["display_name"],
+                "idempotencyKey": idem or None,
             },
             notify={"type": "tick", "slug": m["slug"], "seq": seq,
                     "price": price_after, "status": "open", "outcome": None},
         )
 
-    fresh = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
-    bal = (await session.execute(
-        text("SELECT balance_cents FROM users WHERE id = :id"), {"id": user["id"]}
-    )).scalar_one()
-    pos_rows = (
-        await session.execute(
-            text("SELECT side, shares, cost_cents FROM positions WHERE market_id = :m AND user_id = :u"),
-            {"m": fresh["id"], "u": user["id"]},
-        )
-    ).mappings().all()
-    position = {"yes": {"shares": 0, "costCents": 0}, "no": {"shares": 0, "costCents": 0}}
-    for r in pos_rows:
-        position[r["side"]] = {"shares": float(r["shares"]), "costCents": int(r["cost_cents"])}
+        # build the response inside the transaction so its exact body is
+        # stored atomically with the fill — a replay returns this snapshot
+        fresh = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
+        bal = (await session.execute(
+            text("SELECT balance_cents FROM users WHERE id = :id"), {"id": user["id"]}
+        )).scalar_one()
+        pos_rows = (
+            await session.execute(
+                text("SELECT side, shares, cost_cents FROM positions WHERE market_id = :m AND user_id = :u"),
+                {"m": fresh["id"], "u": user["id"]},
+            )
+        ).mappings().all()
+        position = {"yes": {"shares": 0, "costCents": 0}, "no": {"shares": 0, "costCents": 0}}
+        for r in pos_rows:
+            position[r["side"]] = {"shares": float(r["shares"]), "costCents": int(r["cost_cents"])}
 
-    return {
-        "fill": {
-            "side": side, "action": action, "shares": float(round(fill_shares, 2)),
-            "priceCents": fill_price_cents, "amountCents": amount_cents,
-        },
-        "market": market_view(fresh),
-        "position": position,
-        "balanceCents": int(bal),
-    }
+        response = {
+            "fill": {
+                "side": side, "action": action, "shares": float(round(fill_shares, 2)),
+                "priceCents": fill_price_cents, "amountCents": amount_cents,
+            },
+            "market": market_view(fresh),
+            "position": position,
+            "balanceCents": int(bal),
+        }
+        if idem:
+            await session.execute(
+                text("UPDATE idempotency_keys SET response = CAST(:r AS JSONB) "
+                     "WHERE user_id = :u AND key = :k"),
+                {"r": json.dumps(response), "u": user["id"], "k": idem},
+            )
+
+    return response
 
 
 # -------------------------------- resolution --------------------------------
