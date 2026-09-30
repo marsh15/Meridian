@@ -36,7 +36,7 @@ async def _set_session_cookie(response: JSONResponse, user_id: int, session: Asy
     )
     response.set_cookie(
         COOKIE, token, httponly=True, samesite="lax", path="/",
-        max_age=settings.session_max_age,
+        max_age=settings.session_max_age, secure=settings.cookie_secure,
     )
 
 
