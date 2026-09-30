@@ -4,8 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "==> starting Postgres"
+echo "==> starting Postgres + Kafka"
 docker compose up -d --wait
+
+echo "==> provisioning Kafka topics"
+./scripts/provision-topics.sh
 
 # bootstrap web deps on a fresh clone; `uv run` syncs the API on its own
 if [ ! -d apps/web/node_modules ]; then

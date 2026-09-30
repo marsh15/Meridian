@@ -11,6 +11,9 @@ dependencies = [
     "alembic>=1.14",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    # outbox->Kafka relay + consumers (separate processes); the API app
+    # itself never imports this
+    "aiokafka>=0.12",
 ]
 
 [dependency-groups]

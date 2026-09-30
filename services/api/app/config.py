@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3001"
     # seconds between market-close sweeps; 0 disables the background task
     market_sweep_interval_s: int = 30
+    # event backbone (relay + consumers are separate processes; the API
+    # itself never touches Kafka — see docs/failure-model.md)
+    kafka_bootstrap_servers: str = "localhost:9092"
 
     @property
     def asyncpg_dsn(self) -> str:
