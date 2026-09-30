@@ -1,8 +1,12 @@
 import {
+  CandlesSchema,
   HistoryPageSchema,
+  LeaderboardEntrySchema,
   MarketCardSchema,
   MarketDetailSchema,
+  PortfolioSchema,
   TradesPageSchema,
+  UserProfilePageSchema,
   UserSchema,
   type User,
 } from "./schemas";
@@ -56,6 +60,17 @@ export const api = {
       `/api/markets/${slug}/history${beforeId != null ? `?before_id=${beforeId}` : ""}`,
       (raw) => HistoryPageSchema.parse(raw),
     ),
+  marketCandles: (slug: string, range: string) =>
+    req(`/api/markets/${slug}/candles?range=${range}`, (raw) => CandlesSchema.parse(raw)),
+  leaderboard: (limit = 20) =>
+    req(`/api/leaderboard?limit=${limit}`, (raw) => ({
+      leaderboard: LeaderboardEntrySchema.array().parse(
+        (raw as { leaderboard: unknown[] }).leaderboard,
+      ),
+    })),
+  portfolio: () => req("/api/portfolio", (raw) => PortfolioSchema.parse(raw)),
+  userProfile: (name: string) =>
+    req(`/api/users/${encodeURIComponent(name)}`, (raw) => UserProfilePageSchema.parse(raw)),
   createMarket: (body: object) =>
     req("/api/markets", (raw) => raw as { market: { slug: string } }, {
       method: "POST",

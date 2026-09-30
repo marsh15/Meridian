@@ -81,6 +81,93 @@ export const HistoryPageSchema = z.object({
   nextBeforeId: z.number().nullable(),
 });
 
+export const CandleSchema = z.object({
+  t: z.number(), // epoch seconds — chart time
+  o: z.number(),
+  h: z.number(),
+  l: z.number(),
+  c: z.number(),
+  v: z.number(),
+});
+
+export const CandlesSchema = z.object({
+  range: z.string(),
+  bucket: z.string(),
+  candles: z.array(CandleSchema),
+  markers: z.array(z.object({ t: z.number(), kind: z.string() })),
+});
+
+export const LeaderboardEntrySchema = z.object({
+  id: z.number(),
+  trader: z.string(),
+  cashCents: z.number(),
+  mintedCents: z.number(),
+  realizedPnlCents: z.number(),
+  volumeCents: z.number(),
+});
+
+export const PortfolioPositionSchema = z.object({
+  slug: z.string(),
+  question: z.string(),
+  ticker: z.string(),
+  side: z.string(),
+  shares: z.number(),
+  costCents: z.number(),
+  priceCents: z.number(),
+  valueCents: z.number(),
+  pnlCents: z.number(),
+  status: z.string(),
+});
+
+export const PortfolioSchema = z.object({
+  cashCents: z.number(),
+  mintedCents: z.number(),
+  realizedPnlCents: z.number(),
+  volumeCents: z.number(),
+  positionsValueCents: z.number(),
+  netWorthCents: z.number(),
+  positions: z.array(PortfolioPositionSchema),
+});
+
+export const UserProfileSchema = z.object({
+  displayName: z.string(),
+  joinedAt: z.string(),
+  cashCents: z.number(),
+  realizedPnlCents: z.number(),
+  volumeCents: z.number(),
+  tradesCount: z.number(),
+});
+
+export const UserProfilePageSchema = z.object({
+  user: UserProfileSchema,
+  recentTrades: z.array(
+    z.object({
+      slug: z.string(),
+      question: z.string(),
+      ticker: z.string(),
+      side: z.string(),
+      action: z.string(),
+      shares: z.number(),
+      priceCents: z.number(),
+      amountCents: z.number(),
+      at: z.string(),
+    }),
+  ),
+  positions: z.array(
+    z.object({
+      slug: z.string(),
+      question: z.string(),
+      ticker: z.string(),
+      side: z.string(),
+      shares: z.number(),
+      costCents: z.number(),
+      priceCents: z.number(),
+      valueCents: z.number(),
+      status: z.string(),
+    }),
+  ),
+});
+
 export const TickSchema = z.object({
   type: z.string(),
   slug: z.string(),
@@ -97,3 +184,9 @@ export type MarketDetail = z.infer<typeof MarketDetailSchema>;
 export type Tick = z.infer<typeof TickSchema>;
 export type Trade = z.infer<typeof TradeSchema>;
 export type HistoryPoint = z.infer<typeof HistoryPointSchema>;
+export type Candle = z.infer<typeof CandleSchema>;
+export type Candles = z.infer<typeof CandlesSchema>;
+export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>;
+export type PortfolioPosition = z.infer<typeof PortfolioPositionSchema>;
+export type Portfolio = z.infer<typeof PortfolioSchema>;
+export type UserProfilePage = z.infer<typeof UserProfilePageSchema>;

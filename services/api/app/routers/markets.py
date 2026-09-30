@@ -9,7 +9,7 @@ import math
 import random
 import re
 import string
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -279,6 +279,107 @@ async def market_history(
         raise HTTPException(404, "Market not found.")
     history, next_before = await _history_page(session, m["id"], limit, before_id)
     return {"history": history, "nextBeforeId": next_before}
+
+
+# ------------------------------ chart candles -------------------------------
+
+# range → (bucket, lookback window; None = since inception) — asyncpg wants
+# timedeltas, which encode to Postgres intervals natively
+CHART_RANGES: dict[str, tuple[timedelta, timedelta | None]] = {
+    "1h": (timedelta(minutes=1), timedelta(hours=1)),
+    "6h": (timedelta(minutes=5), timedelta(hours=6)),
+    "1d": (timedelta(minutes=15), timedelta(days=1)),
+    "1w": (timedelta(hours=1), timedelta(weeks=1)),
+    "1m": (timedelta(hours=6), timedelta(days=30)),
+    "all": (timedelta(days=1), None),
+}
+BUCKET_LABELS = {"1h": "1 minute", "6h": "5 minutes", "1d": "15 minutes",
+                 "1w": "1 hour", "1m": "6 hours", "all": "1 day"}
+
+
+@router.get("/markets/{slug}/candles")
+async def market_candles(
+    slug: str,
+    range: str = Query("1d", pattern="^(1h|6h|1d|1w|1m|all)$"),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """OHLCV candles for the chart, bucketed server-side from price_history
+    (prices) and trades (volume) with date_bin. Also returns lifecycle
+    markers (open / close / resolution) positioned on the time axis."""
+    m = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
+    if m is None:
+        raise HTTPException(404, "Market not found.")
+
+    bucket, window = CHART_RANGES[range]
+    params: dict[str, Any] = {"m": m["id"], "bucket": bucket}
+    since_sql = ""
+    if window is not None:
+        params["since"] = datetime.now(timezone.utc) - window
+        since_sql = "AND h.created_at >= :since"
+
+    price_rows = (
+        await session.execute(
+            text(f"""
+                SELECT extract(epoch FROM date_bin(CAST(:bucket AS interval), h.created_at,
+                        timestamptz '2000-01-01'))::bigint AS t,
+                       (array_agg(h.price_cents ORDER BY h.id))[1] AS o,
+                       max(h.price_cents) AS hi,
+                       min(h.price_cents) AS lo,
+                       (array_agg(h.price_cents ORDER BY h.id DESC))[1] AS c
+                FROM price_history h
+                WHERE h.market_id = :m {since_sql}
+                GROUP BY 1 ORDER BY 1
+            """),
+            params,
+        )
+    ).mappings().all()
+
+    vol_params = {**params}
+    vol_rows = (
+        await session.execute(
+            text(f"""
+                SELECT extract(epoch FROM date_bin(CAST(:bucket AS interval), t.created_at,
+                        timestamptz '2000-01-01'))::bigint AS t,
+                       sum(t.amount_cents) AS v
+                FROM trades t
+                WHERE t.market_id = :m {since_sql.replace('h.', 't.')}
+                GROUP BY 1 ORDER BY 1
+            """),
+            vol_params,
+        )
+    ).mappings().all()
+    volume_by_t = {r["t"]: int(r["v"]) for r in vol_rows}
+
+    candles = [
+        {"t": r["t"], "o": r["o"], "h": r["hi"], "l": r["lo"], "c": r["c"],
+         "v": volume_by_t.get(r["t"], 0)}
+        for r in price_rows
+    ]
+
+    marker_rows = (
+        await session.execute(
+            text("SELECT event_type, created_at FROM outbox_events "
+                 "WHERE aggregate = :a AND event_type IN ('MarketCreated', 'MarketClosed', "
+                 "'MarketResolved') ORDER BY created_at"),
+            {"a": f"market:{slug}"},
+        )
+    ).mappings().all()
+    markers = [
+        {
+            "t": int(r["created_at"].timestamp()),
+            "kind": {
+                "MarketCreated": "open", "MarketClosed": "close", "MarketResolved": "resolved",
+            }[r["event_type"]],
+        }
+        for r in marker_rows
+    ]
+
+    return {
+        "range": range,
+        "bucket": BUCKET_LABELS[range],
+        "candles": candles,
+        "markers": markers,
+    }
 
 
 # ------------------------------ orders (fills) ------------------------------

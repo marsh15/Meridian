@@ -55,6 +55,15 @@ export default function Header() {
           <Link href="/" aria-current={pathname === "/" ? "page" : undefined}>
             Markets
           </Link>
+          <Link href="/leaderboard" aria-current={pathname === "/leaderboard" ? "page" : undefined}>
+            Leaderboard
+          </Link>
+          <Link href="/categories" aria-current={pathname === "/categories" ? "page" : undefined}>
+            Categories
+          </Link>
+          <Link href="/portfolio" aria-current={pathname === "/portfolio" ? "page" : undefined}>
+            Portfolio
+          </Link>
         </nav>
 
         <div className="header-spacer" />

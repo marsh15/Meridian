@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import auth, ledger, markets, stream
+from app.routers import auth, ledger, markets, stream, users
 
 app = FastAPI(title="Meridian API", version="1.0.0")
 
@@ -23,6 +23,7 @@ app.include_router(auth.router)
 app.include_router(markets.router)
 app.include_router(stream.router)
 app.include_router(ledger.router)
+app.include_router(users.router)
 
 
 @app.exception_handler(HTTPException)
