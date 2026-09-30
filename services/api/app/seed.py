@@ -330,6 +330,12 @@ async def main() -> None:
             if count == 0:
                 await seed_sample_markets(session)
             await seed_demo_activity(session)
+        # import the freshly seeded world into the ledger so reconciliation
+        # holds from the first trade (no-op when entries already exist)
+        async with session.begin():
+            from app.ledger import GENESIS_SQL
+
+            await session.execute(text(GENESIS_SQL))
 
 
 if __name__ == "__main__":

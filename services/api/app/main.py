@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import auth, markets, stream
+from app.routers import auth, ledger, markets, stream
 from app.sweeper import sweep_loop
 
 
@@ -36,6 +36,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(markets.router)
 app.include_router(stream.router)
+app.include_router(ledger.router)
 
 
 @app.exception_handler(HTTPException)

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import ledger
 from app.config import settings
 from app.db import get_session
 from app.deps import current_user, require_user
@@ -75,6 +76,9 @@ async def signup(
                 {"e": email, "p": hash_password(body.password), "n": name},
             )
         ).first()
+        await ledger.post_mint(
+            session, row.id, int(row.balance_cents), "signup bonus"
+        )
         resp = JSONResponse({"user": user_payload(row._mapping)})
         await _set_session_cookie(resp, row.id, session)
     return resp
@@ -127,6 +131,10 @@ async def reset_account(
 ) -> dict:
     """Back to $1,000 and no open positions."""
     async with session.begin():
+        current = (await session.execute(
+            text("SELECT balance_cents FROM users WHERE id = :id FOR UPDATE"),
+            {"id": user["id"]},
+        )).scalar_one()
         await session.execute(
             text("UPDATE users SET balance_cents = :b WHERE id = :id"),
             {"b": settings.start_balance_cents, "id": user["id"]},
@@ -135,6 +143,11 @@ async def reset_account(
             text("UPDATE positions SET shares = 0, cost_cents = 0 WHERE user_id = :id"),
             {"id": user["id"]},
         )
+        delta = settings.start_balance_cents - int(current)
+        if delta > 0:
+            await ledger.post_mint(session, user["id"], delta, "account reset")
+        elif delta < 0:
+            await ledger.post_burn(session, user["id"], -delta, "account reset")
     row = (
         await session.execute(
             text("SELECT id, email, display_name, balance_cents FROM users WHERE id = :id"),

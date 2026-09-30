@@ -2,12 +2,15 @@ import asyncio
 import os
 
 # Must be set before any app import — engine + settings bind at import time.
-# TEST_DATABASE_URL lets CI point the suite at its own Postgres.
+# TEST_DATABASE_URL lets CI point the suite at its own Postgres;
+# SETTLEMENT_MODE=inline keeps resolution testable without a Temporal
+# worker (the workflow itself is tested in test_workflows.py).
 TEST_DSN = os.environ.get(
     "TEST_DATABASE_URL",
     "postgresql+asyncpg://meridian:meridian@localhost:5434/meridian_test",
 )
 os.environ["DATABASE_URL"] = TEST_DSN
+os.environ.setdefault("SETTLEMENT_MODE", "inline")
 
 import asyncpg  # noqa: E402
 import pytest  # noqa: E402
@@ -46,7 +49,8 @@ async def client():
         await conn.execute(
             text("TRUNCATE sessions, positions, trades, price_history, outbox_events, "
                  "idempotency_keys, candles_1m, market_stats, trade_facts, "
-                 "processed_events, markets, users RESTART IDENTITY CASCADE")
+                 "processed_events, ledger_entries, ledger_accounts, "
+                 "markets, users RESTART IDENTITY CASCADE")
         )
 
 

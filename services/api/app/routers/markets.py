@@ -23,6 +23,7 @@ from app.config import CATEGORIES
 from app.db import get_session
 from app.deps import current_user, require_user
 from app.events import record_event
+from app import ledger
 from app.views import decimal_shares, market_view, select_market, tick_payload
 
 router = APIRouter(prefix="/api")
@@ -436,11 +437,17 @@ async def place_order(
                 {"sh": clamped, "id": m["id"]},
             )
 
-        await session.execute(
-            text("INSERT INTO trades (market_id, user_id, side, action, shares, price_cents, "
-                 "amount_cents) VALUES (:m,:u,:s,:a,:sh,:p,:amt)"),
-            {"m": m["id"], "u": u["id"], "s": side, "a": action,
-             "sh": fill_shares, "p": fill_price_cents, "amt": amount_cents},
+        trade_row = (
+            await session.execute(
+                text("INSERT INTO trades (market_id, user_id, side, action, shares, price_cents, "
+                     "amount_cents) VALUES (:m,:u,:s,:a,:sh,:p,:amt) RETURNING id"),
+                {"m": m["id"], "u": u["id"], "s": side, "a": action,
+                 "sh": fill_shares, "p": fill_price_cents, "amt": amount_cents},
+            )
+        ).first()
+        await ledger.post_trade(
+            session, user_id=u["id"], market_id=m["id"], amount_cents=amount_cents,
+            cash="out" if action == "buy" else "in", trade_id=trade_row.id,
         )
         seq_row = (
             await session.execute(
@@ -557,17 +564,20 @@ async def resolve_market(
                 {"m": m["id"], "s": body.outcome},
             )
         ).mappings().all()
+        payouts: list[tuple[int, int]] = []
         for p in winners:
             payout = int(Decimal(p["shares"]) * 100)
             await session.execute(
                 text("UPDATE users SET balance_cents = balance_cents + :pay WHERE id = :id"),
                 {"pay": payout, "id": p["user_id"]},
             )
+            payouts.append((p["user_id"], payout))
         # winning shares became cash, losing shares expired — clear the book
         await session.execute(
             text("UPDATE positions SET shares = 0, cost_cents = 0 WHERE market_id = :m"),
             {"m": m["id"]},
         )
+        await ledger.post_payouts(session, m["id"], payouts)
         await record_event(
             session,
             aggregate=f"market:{slug}",
