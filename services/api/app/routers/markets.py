@@ -263,9 +263,9 @@ async def place_order(
         if row is None:
             raise HTTPException(404, "Market not found.")
         m = row._mapping
-        if m["status"] != "open":
+        if m["status"] == "resolved":
             raise HTTPException(400, f"This market resolved {m['outcome']}. No more trading.")
-        if m["closes_at"] < datetime.now(timezone.utc):
+        if m["status"] != "open" or m["closes_at"] < datetime.now(timezone.utc):
             raise HTTPException(400, "This market has closed. Awaiting resolution.")
 
         replayed = None
@@ -464,8 +464,10 @@ async def resolve_market(
         m = row._mapping
         if m["creator_id"] != user["id"]:
             raise HTTPException(403, "Only the market creator can resolve.")
-        if m["status"] != "open":
+        if m["status"] == "resolved":
             raise HTTPException(400, "Market is already resolved.")
+        # resolving is allowed from 'open' (early) and 'closed' (the sweeper
+        # already transitioned it — this is the normal path)
 
         await session.execute(
             text("UPDATE markets SET status = 'resolved', outcome = :o WHERE id = :id"),

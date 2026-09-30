@@ -100,7 +100,12 @@ export default function MarketDetail() {
 
   const up = market.change24h >= 0;
   const resolved = market.status === "resolved";
-  const closed = !resolved && new Date(market.closesAt).getTime() < Date.now();
+  // status === "closed" is the server's word (sweeper transitioned it);
+  // the clock check is a pre-sweep fallback for freshly expired markets
+  const closed =
+    !resolved &&
+    (market.status === "closed" ||
+      new Date(market.closesAt).getTime() < Date.now());
 
   return (
     <main className="detail wrap">
