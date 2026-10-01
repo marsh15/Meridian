@@ -8,7 +8,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { useMarketsStream } from "@/hooks/useMarketStream";
 import MarketCard from "@/components/MarketCard";
 import CreateMarketModal from "@/components/CreateMarketModal";
-import type { MarketCardData } from "@/lib/schemas";
+import type { MarketCardData } from "@meridian/contracts";
 
 function SkeletonGrid() {
   return (

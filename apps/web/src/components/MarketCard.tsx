@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { fmtVol, fmtDate } from "@/lib/format";
-import type { MarketCardData } from "@/lib/schemas";
+import type { MarketCardData } from "@meridian/contracts";
 import Sparkline from "./Sparkline";
 
 export default function MarketCard({

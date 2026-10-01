@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "@/lib/api";
 import { timeAgo, fmtMoney } from "@/lib/format";
-import type { MarketDetail, Trade } from "@/lib/schemas";
+import type { MarketDetail, Trade } from "@meridian/contracts";
 
 export default function RecentTrades({ market }: { market: MarketDetail }) {
   // older pages walked via keyset pagination; the embedded page is the

@@ -10,7 +10,7 @@ import {
   type ReactNode,
 } from "react";
 import { api } from "@/lib/api";
-import type { User } from "@/lib/schemas";
+import type { User } from "@meridian/contracts";
 
 type AuthMode = "login" | "signup";
 

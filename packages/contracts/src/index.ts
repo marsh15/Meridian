@@ -1,7 +1,9 @@
 import { z } from "zod";
 
 /* API contract — the single source of truth for what the FastAPI service
-   returns. Types are inferred; parsing happens at the client boundary. */
+   returns. Types are inferred; parsing happens at the client boundary.
+   Consumed as a workspace package (@meridian/contracts) so any future JS
+   surface (admin console, bots) shares the exact same shapes. */
 
 export const UserSchema = z.object({
   id: z.number(),

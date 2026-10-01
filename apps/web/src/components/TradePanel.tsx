@@ -6,7 +6,7 @@ import { useAuth } from "@/auth/AuthContext";
 import { api } from "@/lib/api";
 import { sharesForDollars, proceedsForShares } from "@/lib/amm";
 import { useHotkeys } from "@/hooks/useHotkeys";
-import type { MarketDetail } from "@/lib/schemas";
+import type { MarketDetail } from "@meridian/contracts";
 
 const PRESETS = [10, 50, 100, 250];
 

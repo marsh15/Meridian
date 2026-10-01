@@ -1,0 +1,12 @@
+{
+  "name": "meridian",
+  "private": true,
+  "packageManager": "pnpm@12.8.1",
+  "scripts": {
+    "dev": "./scripts/dev.sh",
+    "web": "pnpm --filter meridian-web dev",
+    "typecheck": "pnpm --filter meridian-web typecheck",
+    "test:unit": "pnpm --filter meridian-web test:unit",
+    "test:e2e": "pnpm --filter meridian-web test:e2e"
+  }
+}

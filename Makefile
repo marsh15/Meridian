@@ -8,10 +8,10 @@ help: ## List targets
 dev: ## Full dev stack: Postgres + migrations + seed + API + web (Ctrl-C stops all)
 	./scripts/dev.sh
 
-db: ## Start Postgres + Kafka and wait for both to be healthy
+db: ## Start Postgres + Kafka + Redis + telemetry, wait until healthy
 	docker compose up -d --wait
 
-down: ## Stop Postgres + Kafka
+down: ## Stop the compose stack
 	docker compose down
 
 kafka-topics: ## Provision the exchange.* topics (idempotent)
@@ -38,7 +38,7 @@ api: ## API only, with reload (assumes Postgres is up: make db)
 	cd services/api && uv run uvicorn app.main:app --reload --port $(API_PORT)
 
 web: ## Web only (assumes the API is running)
-	cd apps/web && npm run dev
+	cd apps/web && pnpm dev
 
 migrate: ## Apply Alembic migrations
 	cd services/api && uv run alembic upgrade head
@@ -50,13 +50,17 @@ test: ## API test suite
 	cd services/api && uv run pytest
 
 typecheck: ## Web typecheck
-	cd apps/web && npm run typecheck
+	cd apps/web && pnpm typecheck
 
 test-unit: ## Web unit tests (Vitest: AMM mirror vs Python fixtures)
-	cd apps/web && npm run test:unit
+	cd apps/web && pnpm test:unit
 
 test-e2e: ## Web e2e (Playwright happy path; boots the stack itself)
-	cd apps/web && npm run test:e2e
+	cd apps/web && pnpm test:e2e
+
+load: ## k6 order-path profile against the local API (k6 via docker)
+	docker run --rm -v "$(PWD)/load:/load" -e BASE=http://host.docker.internal:8393 \
+		grafana/k6:1.0.0 run /load/order-path.js
 
 .PHONY: help dev db down api web migrate seed test typecheck test-unit test-e2e \
-	kafka-topics kafka-dump relay consumers events worker
+	kafka-topics kafka-dump relay consumers events worker load

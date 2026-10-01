@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { fmtVol } from "@/lib/format";
 import MarketCard from "@/components/MarketCard";
 import { GridSkeleton, PageHead } from "@/components/LedgerBits";
-import type { MarketCardData } from "@/lib/schemas";
+import type { MarketCardData } from "@meridian/contracts";
 
 function catId(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-");

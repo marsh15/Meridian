@@ -1,0 +1,14 @@
+{
+  "name": "@meridian/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Shared API contract: Zod schemas for everything the FastAPI service returns",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  }
+}

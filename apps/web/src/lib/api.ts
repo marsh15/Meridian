@@ -9,7 +9,7 @@ import {
   UserProfilePageSchema,
   UserSchema,
   type User,
-} from "./schemas";
+} from "@meridian/contracts";
 
 async function req<T>(
   path: string,

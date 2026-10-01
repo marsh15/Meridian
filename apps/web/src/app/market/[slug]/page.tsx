@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 import { fmtVol, fmtDate } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
 import { useMarketStream } from "@/hooks/useMarketStream";
-import type { MarketDetail } from "@/lib/schemas";
+import type { MarketDetail } from "@meridian/contracts";
 import { AnimatedNumber, AnimatedToast } from "@/components/AnimatedPrice";
 import MarketChart from "@/components/MarketChart";
 import TradePanel from "@/components/TradePanel";

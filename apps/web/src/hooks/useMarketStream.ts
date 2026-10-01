@@ -7,7 +7,7 @@
 
 import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { TickSchema, type MarketCardData, type MarketDetail, type Tick } from "@/lib/schemas";
+import { TickSchema, type MarketCardData, type MarketDetail, type Tick } from "@meridian/contracts";
 
 function onTick(e: Event, handler: (t: Tick) => void) {
   const parsed = TickSchema.safeParse(JSON.parse((e as MessageEvent).data));

@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/auth/AuthContext";
 import { useHotkeys } from "@/hooks/useHotkeys";
 import { useModalLifecycle } from "@/hooks/useModalLifecycle";
-import type { MarketCardData } from "@/lib/schemas";
+import type { MarketCardData } from "@meridian/contracts";
 
 const OPEN_EVENT = "meridian:open-palette";
 const LIST_ID = "palette-list";

@@ -24,7 +24,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import type { Candle } from "@/lib/schemas";
+import type { Candle } from "@meridian/contracts";
 import { fmtVol } from "@/lib/format";
 
 export interface ChartMarker {

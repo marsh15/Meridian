@@ -6,7 +6,7 @@
    patched locally — the portfolio query is never refetched per tick. */
 
 import { useEffect, useRef, useState } from "react";
-import { TickSchema } from "@/lib/schemas";
+import { TickSchema } from "@meridian/contracts";
 
 export interface LiveTick {
   price: number; // yes price, in cents
