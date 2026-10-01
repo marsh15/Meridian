@@ -49,6 +49,15 @@ class Settings(BaseSettings):
     market_creates_per_hour: int = 10
     # OTLP endpoint (http://localhost:4318) — empty disables telemetry
     otlp_endpoint: str = ""
+    # Intelligence layer (phase 6, ADR 0010): OpenAI-compatible chat
+    # endpoint. Point at Ollama (http://localhost:11434/v1) for a free
+    # local model, or any hosted API via base URL + key. Empty = off.
+    llm_base_url: str = ""
+    llm_api_key: str = ""
+    llm_model: str = "qwen3:1.7b"
+    llm_timeout_s: float = 60.0
+    intel_cache_hours: float = 12.0
+    intel_requests_per_hour: int = 6
 
     @property
     def asyncpg_dsn(self) -> str:

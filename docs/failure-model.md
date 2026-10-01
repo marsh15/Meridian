@@ -166,6 +166,9 @@ through the outbox, not parked in a queue.
 | Redis dies mid-SSE-stream | That stream ends | Browser EventSource reconnects (fallback or re-subscribe) |
 | Redis blip at API boot | Redis-backed features off | 5s retry cooldown re-enables without a restart |
 | Cache purge lost (Redis down at write time) | List may be ≤2s stale | TTL — bounded by construction |
+| LLM unset / down (ADR 0010) | Briefs/explanations 503 cleanly; chart event timeline unaffected | Operator: set LLM_BASE_URL (or start Ollama) |
+| Retrieval fails (news/wiki unreachable) | Brief generates from market data with zero sources | Retry on next generate; note visible in the brief |
+| Model returns garbage JSON | 502 after one plain-completion retry | Operator: regenerate (cache keeps the last good artifact) |
 
 Settlement durability (ADR 0008): market lifecycle runs as a Temporal
 workflow — the close timer and the wait-for-resolution are durable state,
@@ -188,6 +191,16 @@ single instance. The observability pipeline follows the same philosophy:
 `OTLP_ENDPOINT` unset disables it entirely, and exporter failures drop
 batches (2s timeouts) rather than block the app — telemetry must never
 become a dependency either.
+
+## The intelligence layer cites or says nothing (ADR 0010)
+
+Briefs and explanations are optional by construction: no LLM configured
+means a clean 503, retrieval failures mean fewer sources, and a malformed
+model answer means a 502 — never a partially-trusted artifact. The one
+hard invariant: the model only cites fetched sources by index, and the
+server attaches the real URLs, so a citation cannot link somewhere the
+retriever never went. Generated artifacts are cached rows; the last good
+one survives outages until superseded.
 
 ## Operating notes
 

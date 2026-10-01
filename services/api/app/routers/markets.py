@@ -394,6 +394,50 @@ async def market_candles(
         for r in marker_rows
     ]
 
+    # event timeline (phase 6): outsized trades and sharp candle-to-candle
+    # moves join the lifecycle markers, so the chart explains itself
+    threshold = 2000
+    if vol_rows:
+        amounts = sorted(int(r["v"]) for r in vol_rows)
+        threshold = max(2000, amounts[max(0, int(len(amounts) * 0.9) - 1)])
+    large_trades = (
+        await session.execute(
+            text(f"""
+                SELECT t.side, t.action, t.amount_cents, t.created_at
+                FROM trades t
+                WHERE t.market_id = :m {since_sql.replace('h.', 't.')}
+                  AND t.amount_cents >= :thr
+                ORDER BY t.amount_cents DESC LIMIT 10
+            """),
+            {**params, "thr": threshold},
+        )
+    ).all()
+    for t in large_trades:
+        up = (t.side == "yes") == (t.action == "buy")
+        markers.append({
+            "t": int(t.created_at.timestamp()),
+            "kind": "trade-large",
+            "dir": "up" if up else "down",
+        })
+
+    if len(candles) >= 3:
+        from statistics import median
+
+        deltas = [abs(cur["c"] - prev["c"]) for prev, cur in zip(candles, candles[1:])]
+        # median, not mean: the moves being detected are exactly the
+        # outliers that would inflate a mean-based threshold
+        move_thr = max(8, round(2 * median(deltas)))
+        for prev, cur in zip(candles, candles[1:]):
+            delta = cur["c"] - prev["c"]
+            if abs(delta) >= move_thr:
+                markers.append({
+                    "t": cur["t"], "kind": "move",
+                    "dir": "up" if delta > 0 else "down",
+                })
+
+    markers.sort(key=lambda mk: mk["t"])
+    markers = markers[-60:]  # chart clutter guard
+
     return {
         "range": range,
         "bucket": BUCKET_LABELS[range],

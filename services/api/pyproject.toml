@@ -17,6 +17,8 @@ dependencies = [
     "temporalio>=1.33.0",
     # rate limiting + hot-market cache + SSE fan-out (fails open without it)
     "redis>=5.2",
+    # outbound HTTP: intel-layer retrieval + the OpenAI-compatible LLM client
+    "httpx>=0.28",
     # traces + metrics to the OTLP collector (disabled unless OTEL endpoint set)
     "opentelemetry-sdk>=1.29",
     "opentelemetry-exporter-otlp-proto-http>=1.29",

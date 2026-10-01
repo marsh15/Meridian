@@ -15,6 +15,7 @@ market maker, instant fills, live prices over SSE, play money.
 | Realtime | SSE + Postgres LISTEN/NOTIFY, fanned out through Redis pub/sub ([ADR 0009](docs/adr/0009-redis-layer.md)) |
 | Events | Transactional outbox → Kafka relay → candles · volume · analytics consumers — [failure model](docs/failure-model.md) |
 | Cache/limits | Redis — hot-market cache, fixed-window rate limits, SSE fan-out; every use fails open |
+| Intelligence | Market briefs + move explanations: keyless retrieval (news RSS, Wikipedia) → lexical rerank → any OpenAI-compatible LLM (Ollama locally) → cited, validated structure ([ADR 0010](docs/adr/0010-intelligence-layer.md)) |
 | Observability | OTel → collector → Prometheus · Tempo · Grafana (order-pipeline dashboard) + k6 load profile |
 | Tests | pytest (API core) · Vitest (AMM mirror vs Python fixtures) · Playwright (signup→trade→resolve) |
 
@@ -42,11 +43,16 @@ traces are in Grafana's Explore → Tempo. The Temporal UI is opt-in:
 `docker compose --profile ui up` → http://localhost:8081.
 
 ```bash
-make test        # API: math, money, concurrency, idempotency, lifecycle, pagination, relay, consumers, ledger, workflows
+make test        # API: math, money, concurrency, idempotency, lifecycle, pagination, relay, consumers, ledger, workflows, intel
 make typecheck   # web: tsc --noEmit
 make test-unit   # web: Vitest — lib/amm.ts mirror against Python-engine fixtures
 make test-e2e    # web: Playwright happy path (signup → trade → resolve); boots the stack
 ```
+
+To switch the intelligence layer on locally: `ollama serve`, then run the
+API with `LLM_BASE_URL=http://localhost:11434/v1` (any OpenAI-compatible
+endpoint + key works too). Briefs/explanations answer 503 without it, and
+the chart's event-timeline markers work regardless.
 
 The event backbone runs alongside: `make db` brings up Postgres + Kafka
 (single-node KRaft), `make events` runs the outbox→Kafka relay and the
@@ -136,6 +142,16 @@ docs/              ADRs + ROADMAP + failure model
   order-pipeline dashboard watches order/matching latency percentiles,
   orders/s, cache hit ratio, rate-limit rejections, SSE streams, outbox
   lag, and per-group consumer lag; FastAPI server spans land in Tempo.
+- **Intelligence** — market briefs with real citations: news RSS +
+  Wikipedia are retrieved keylessly, reranked lexically, and summarized by
+  an OpenAI-compatible LLM (Ollama's qwen3 locally — `ollama serve` +
+  `LLM_BASE_URL=http://localhost:11434/v1`, or any hosted API) into
+  bull/bear cases, catalysts, and per-source quality. The model cites
+  fetched sources by index and the server attaches the real URLs, so
+  citations can't be hallucinated ([ADR 0010](docs/adr/0010-intelligence-layer.md)).
+  "Explain this range" grounds itself in the exchange's own trades and
+  lifecycle events for the window; large trades and sharp moves land as
+  chart markers computed deterministically, no model required.
 - **Product surface** — Lightweight Charts with range switcher, volume
   pane, and lifecycle markers; a portfolio terminal with live P&L off
   the global SSE stream; ⌘K command palette and keyboard trading

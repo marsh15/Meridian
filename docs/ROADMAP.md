@@ -83,9 +83,16 @@ CSS system intact (that boundary held).
   the edge locally ([deploy.md](deploy.md)); actual deploy awaits
   `flyctl auth login`.
 
-## Phase 6 — Intelligence (trigger: exchange core stable)
+## Phase 6 — Intelligence ✅ (shipped 2026-10-01)
 
-- Market briefs: retrieval → rerank → LLM → structured brief with citations
-  (bull/bear cases, catalysts, source quality).
-- "Explain this move": chart range selection → time-boxed source retrieval
-  → narrative. Event timeline overlays on the chart.
+- **Market briefs** ✅: keyless retrieval (news RSS + Wikipedia) → local
+  lexical rerank → any OpenAI-compatible LLM (verified against local
+  Ollama qwen3) → cited bull/bear cases, catalysts, per-source quality.
+  The model cites by index; the server attaches the real URLs — citations
+  cannot be hallucinated ([ADR 0010](adr/0010-intelligence-layer.md)).
+- **"Explain this move"** ✅: the chart's active range → time-boxed retrieval
+  (our trades/lifecycle events first, in-window news second) → typed,
+  weighted drivers + confidence.
+- **Event timeline overlays** ✅: large trades (≥ window p90) and sharp
+  candle moves (≥ 2× median delta) as chart markers, computed
+  deterministically — no model needed.

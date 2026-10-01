@@ -1,0 +1,452 @@
+/* phase 6 — intelligence layer (AI brief + explain-this-move); kept
+   separate so parallel work never touches app.css (imported last at the
+   top of app.css). Same card grammar as the rest of the app: .card
+   surface, hairline + dashed dividers, label eyebrows, warm tints, and
+   tabular numerals wherever a number can move. */
+
+/* ---------- shared ---------- */
+.intel-label {
+  font-family: var(--font-display);
+  text-transform: var(--label-transform);
+  letter-spacing: var(--label-tracking);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.intel-error {
+  background: var(--down-soft);
+  color: var(--down);
+  border: 1px solid rgba(189, 53, 36, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-top: 10px;
+}
+
+/* ---------- AI brief card ---------- */
+.brief-card {
+  padding: 22px;
+  margin-bottom: 22px;
+}
+
+.brief-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.intel-glyph {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.brief-headline {
+  font-family: var(--font-display);
+  font-size: 21px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+  text-wrap: balance;
+}
+
+.brief-summary {
+  margin: 0 0 16px;
+  color: var(--ink-soft);
+  font-size: 14.5px;
+  max-width: 65ch;
+  text-wrap: pretty;
+}
+
+/* bull/bear — tinted columns, same soft washes the badges use */
+.brief-cases {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+@media (max-width: 560px) {
+  .brief-cases {
+    grid-template-columns: 1fr;
+  }
+}
+
+.case-col {
+  min-width: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  padding: 14px 16px;
+}
+.case-col.bull {
+  background: var(--up-soft);
+  border-color: rgba(13, 122, 72, 0.25);
+}
+.case-col.bear {
+  background: var(--down-soft);
+  border-color: rgba(189, 53, 36, 0.25);
+}
+
+.case-col-label {
+  font-size: 11px;
+  font-weight: var(--label-weight);
+  text-transform: var(--label-transform);
+  letter-spacing: var(--label-tracking);
+  margin-bottom: 8px;
+}
+.case-col.bull .case-col-label {
+  color: var(--up);
+}
+.case-col.bear .case-col-label {
+  color: var(--down);
+}
+
+.case-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.case-point {
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+/* superscript citation number → jumps to the numbered source row */
+.cite {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--accent);
+  vertical-align: super;
+  line-height: 0;
+  margin-left: 3px;
+  font-variant-numeric: tabular-nums;
+  transition: color var(--dur-med) ease;
+}
+.cite:hover {
+  color: var(--ink);
+}
+
+/* catalysts — compact what + when */
+.brief-catalysts {
+  margin: 0 0 16px;
+}
+.catalyst-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.catalyst-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+.catalyst-what {
+  min-width: 0;
+}
+.when-chip {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent-2);
+  background: rgba(138, 109, 29, 0.1);
+  border-radius: 999px;
+  padding: 2px 9px;
+  white-space: nowrap;
+}
+
+.brief-note {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  font-style: italic;
+  color: var(--muted);
+  max-width: 65ch;
+}
+
+/* sources — ruled rows under a dashed divider, like the stats rows */
+.brief-sources {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+.src-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.src-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 12.5px;
+  min-width: 0;
+}
+.src-row:last-child {
+  border-bottom: none;
+}
+.src-idx {
+  flex: none;
+  color: var(--muted);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.src-title {
+  color: var(--ink-soft);
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color var(--dur-med) ease;
+}
+.src-title:hover {
+  color: var(--accent);
+}
+.src-meta {
+  flex: none;
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.qbadge {
+  flex: none;
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.qbadge.high {
+  color: var(--up);
+  background: var(--up-soft);
+}
+.qbadge.medium {
+  color: var(--accent-2);
+  background: rgba(138, 109, 29, 0.1);
+}
+.qbadge.low {
+  color: var(--muted);
+  background: var(--surface-2);
+}
+
+.brief-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.brief-meta {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* empty state — one line + generate, no ceremony */
+.brief-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.brief-empty-copy {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--muted);
+  max-width: 52ch;
+}
+.brief-empty-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+.brief-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* loading — the app's skeleton treatment */
+.brief-skels {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  margin-top: 12px;
+}
+.brief-skels .skel {
+  height: 12px;
+}
+.brief-skels .skel:nth-child(1) {
+  width: 70%;
+  height: 18px;
+}
+.brief-skels .skel:nth-child(2) {
+  width: 92%;
+}
+.brief-skels .skel:nth-child(3) {
+  width: 48%;
+}
+
+/* ---------- explain this move (inside the chart card) ---------- */
+.explain {
+  border-top: 1px dashed var(--border);
+  margin-top: 2px;
+  padding-top: 10px;
+}
+
+.explain-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* quiet ghost trigger — present, but never competing with the chart */
+.explain-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 5px 13px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color var(--dur-med) ease, background-color var(--dur-med) ease,
+    color var(--dur-med) ease, transform var(--dur-fast) var(--ease-out);
+}
+.explain-trigger:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.explain-trigger:active:not(:disabled) {
+  transform: scale(0.96);
+}
+.explain-trigger:disabled {
+  cursor: default;
+  opacity: 0.75;
+}
+.explain-spark {
+  color: var(--accent);
+  font-size: 11px;
+}
+
+.explain-pending {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.explain-error {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--down);
+}
+
+.explain-body {
+  margin-top: 10px;
+}
+.explain-narrative {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  max-width: 70ch;
+  text-wrap: pretty;
+}
+
+/* drivers — horizontal chips, kind + weight */
+.driver-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.driver-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.driver-kind {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+.driver-weight {
+  font-weight: 700;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.explain-window {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.explain-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+.explain-sources a {
+  font-size: 11.5px;
+  color: var(--muted);
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+  transition: color var(--dur-med) ease;
+}
+.explain-sources a:hover {
+  color: var(--accent);
+}
+
+/* confidence — same tint scale as the quality badges */
+.conf {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 9px;
+  border-radius: 999px;
+}
+.conf-high {
+  color: var(--up);
+  background: var(--up-soft);
+}
+.conf-medium {
+  color: var(--accent-2);
+  background: rgba(138, 109, 29, 0.1);
+}
+.conf-low {
+  color: var(--muted);
+  background: var(--surface-2);
+}

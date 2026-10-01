@@ -6,31 +6,10 @@ covered implicitly by every other test file, which runs with REDIS_URL=''.
 
 import asyncio
 
-import fakeredis.aioredis
 import pytest
 from sqlalchemy import text
 
-from app import redis as redis_mod
 from app.config import settings
-
-
-async def _close(obj) -> None:
-    closer = getattr(obj, "aclose", None) or obj.close
-    result = closer()
-    if asyncio.iscoroutine(result):
-        await result
-
-
-@pytest.fixture
-async def fake_redis(monkeypatch):
-    r = fakeredis.aioredis.FakeRedis(decode_responses=True)
-    # the suite runs with REDIS_URL='' — re-enable the path and hand the
-    # module a fake client so it never pings or builds a real one
-    monkeypatch.setattr(settings, "redis_url", "redis://fake.test:6379/0")
-    monkeypatch.setattr(redis_mod, "_client", r)
-    monkeypatch.setattr(redis_mod, "_retry_at", 0.0)
-    yield r
-    await _close(r)
 
 
 # ------------------------------- rate limits --------------------------------
@@ -182,7 +161,10 @@ async def test_tick_bridge_carries_pg_notify_to_redis(fake_redis):
                 break
         assert got == payload
     finally:
-        await _close(pubsub)
+        closer = getattr(pubsub, 'aclose', None) or pubsub.close
+        result = closer()
+        if hasattr(result, '__await__'):
+            await result
         await tick_hub.stop()
     assert not tick_hub.enabled
 

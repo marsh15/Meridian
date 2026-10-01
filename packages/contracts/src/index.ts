@@ -92,12 +92,82 @@ export const CandleSchema = z.object({
   v: z.number(),
 });
 
+// lifecycle markers plus the phase-6 event timeline: outsized trades and
+// sharp candle-to-candle moves
+export const MarkerSchema = z.object({
+  t: z.number(),
+  kind: z.enum(["open", "close", "resolved", "trade-large", "move"]),
+  dir: z.enum(["up", "down"]).optional(),
+});
+
 export const CandlesSchema = z.object({
   range: z.string(),
   bucket: z.string(),
   candles: z.array(CandleSchema),
-  markers: z.array(z.object({ t: z.number(), kind: z.string() })),
+  markers: z.array(MarkerSchema),
 });
+
+// ------------------------- intelligence layer (6) ---------------------------
+
+export const IntelSourceSchema = z.object({
+  idx: z.number(),
+  title: z.string(),
+  url: z.string(),
+  publisher: z.string(),
+  publishedAt: z.string().nullable().optional(),
+  quality: z.enum(["high", "medium", "low"]).default("medium"),
+});
+
+export const CasePointSchema = z.object({
+  claim: z.string(),
+  citation: z.number().nullable(),
+});
+
+export const CatalystSchema = z.object({
+  what: z.string(),
+  whenHint: z.string().default(""),
+  citation: z.number().nullable(),
+});
+
+export const BriefSchema = z.object({
+  headline: z.string(),
+  summary: z.string(),
+  bullish: z.array(CasePointSchema),
+  bearish: z.array(CasePointSchema),
+  catalysts: z.array(CatalystSchema),
+  sourceNote: z.string().default(""),
+  sources: z.array(IntelSourceSchema),
+  generatedAt: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export const BriefPageSchema = z.object({ brief: BriefSchema });
+
+export const DriverSchema = z.object({
+  kind: z.enum(["trade_flow", "news", "lifecycle", "liquidity", "other"]),
+  weight: z.number(),
+  evidence: z.string(),
+});
+
+export const ExplanationSchema = z.object({
+  narrative: z.string(),
+  drivers: z.array(DriverSchema),
+  confidence: z.enum(["low", "medium", "high"]),
+  range: z.string(),
+  window: z.object({ from: z.string(), to: z.string() }),
+  sources: z.array(
+    z.object({
+      idx: z.number(),
+      title: z.string(),
+      url: z.string(),
+      publisher: z.string(),
+      publishedAt: z.string().nullable().optional(),
+    }),
+  ),
+  generatedAt: z.string().optional(),
+});
+
+export const ExplanationPageSchema = z.object({ explanation: ExplanationSchema });
 
 export const LeaderboardEntrySchema = z.object({
   id: z.number(),
@@ -187,8 +257,15 @@ export type Tick = z.infer<typeof TickSchema>;
 export type Trade = z.infer<typeof TradeSchema>;
 export type HistoryPoint = z.infer<typeof HistoryPointSchema>;
 export type Candle = z.infer<typeof CandleSchema>;
+export type Marker = z.infer<typeof MarkerSchema>;
 export type Candles = z.infer<typeof CandlesSchema>;
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>;
 export type PortfolioPosition = z.infer<typeof PortfolioPositionSchema>;
 export type Portfolio = z.infer<typeof PortfolioSchema>;
 export type UserProfilePage = z.infer<typeof UserProfilePageSchema>;
+export type IntelSource = z.infer<typeof IntelSourceSchema>;
+export type CasePoint = z.infer<typeof CasePointSchema>;
+export type Catalyst = z.infer<typeof CatalystSchema>;
+export type Brief = z.infer<typeof BriefSchema>;
+export type Driver = z.infer<typeof DriverSchema>;
+export type Explanation = z.infer<typeof ExplanationSchema>;

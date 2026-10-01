@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 from app.config import settings
 from app.fanout import tick_hub
 from app.redis import close_redis
-from app.routers import auth, ledger, markets, stream, users
+from app.routers import auth, intel, ledger, markets, stream, users
 from app.telemetry import setup_telemetry
 
 
@@ -39,6 +39,7 @@ app.include_router(markets.router)
 app.include_router(stream.router)
 app.include_router(ledger.router)
 app.include_router(users.router)
+app.include_router(intel.router)
 
 
 @app.exception_handler(HTTPException)

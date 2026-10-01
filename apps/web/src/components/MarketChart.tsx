@@ -30,6 +30,8 @@ import { fmtVol } from "@/lib/format";
 export interface ChartMarker {
   t: number;
   kind: string;
+  /** direction for trade-large/move markers (absent on lifecycle ones) */
+  dir?: "up" | "down";
 }
 
 interface MarketChartProps {
@@ -228,6 +230,25 @@ export default function MarketChart({
             shape: yes ? "arrowUp" : "arrowDown",
             color: yes ? up : down,
             text: yes ? "Resolved YES" : "Resolved NO",
+          };
+        }
+        if (m.kind === "trade-large") {
+          const isUp = m.dir !== "down";
+          return {
+            time: m.t as UTCTimestamp,
+            position: isUp ? "aboveBar" : "belowBar",
+            shape: isUp ? "arrowUp" : "arrowDown",
+            color: isUp ? up : down,
+            text: "Large trade",
+          };
+        }
+        if (m.kind === "move") {
+          const color = m.dir == null ? muted : m.dir === "down" ? down : up;
+          return {
+            time: m.t as UTCTimestamp,
+            position: m.dir === "down" ? "belowBar" : "aboveBar",
+            shape: "circle",
+            color,
           };
         }
         return { time: m.t as UTCTimestamp, position: "inBar", shape: "circle", color: muted };

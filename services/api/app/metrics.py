@@ -27,6 +27,8 @@ matching_latency = meter.create_histogram(
 cache_hits = meter.create_counter("meridian.cache.hits")
 cache_misses = meter.create_counter("meridian.cache.misses")
 ratelimit_rejections = meter.create_counter("meridian.ratelimit.rejections")
+intel_requests = meter.create_counter("meridian.intel.requests")
+intel_failures = meter.create_counter("meridian.intel.failures")
 
 
 def _observe_streams(_options) -> list[Observation]:

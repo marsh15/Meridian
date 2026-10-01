@@ -1,5 +1,7 @@
 import {
+  BriefPageSchema,
   CandlesSchema,
+  ExplanationPageSchema,
   HistoryPageSchema,
   LeaderboardEntrySchema,
   MarketCardSchema,
@@ -8,8 +10,18 @@ import {
   TradesPageSchema,
   UserProfilePageSchema,
   UserSchema,
+  type Brief,
+  type Explanation,
   type User,
 } from "@meridian/contracts";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
 
 async function req<T>(
   path: string,
@@ -23,7 +35,9 @@ async function req<T>(
     headers: { "Content-Type": "application/json", ...headers },
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((data as { error?: string }).error || "Request failed");
+  if (!res.ok) {
+    throw new ApiError(res.status, (data as { error?: string }).error || "Request failed");
+  }
   return parse(data);
 }
 
@@ -62,6 +76,25 @@ export const api = {
     ),
   marketCandles: (slug: string, range: string) =>
     req(`/api/markets/${slug}/candles?range=${range}`, (raw) => CandlesSchema.parse(raw)),
+  marketBrief: async (slug: string): Promise<Brief | null> => {
+    // 404 just means "nothing generated yet" — not an error state
+    try {
+      return (await req(`/api/markets/${slug}/brief`, (raw) => BriefPageSchema.parse(raw)))
+        .brief;
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) return null;
+      throw err;
+    }
+  },
+  generateBrief: (slug: string) =>
+    req(`/api/markets/${slug}/brief`, (raw) => BriefPageSchema.parse(raw), {
+      method: "POST",
+    }),
+  explainMove: (slug: string, range: string) =>
+    req(
+      `/api/markets/${slug}/explain?range=${range}`,
+      (raw) => ExplanationPageSchema.parse(raw),
+    ),
   leaderboard: (limit = 20) =>
     req(`/api/leaderboard?limit=${limit}`, (raw) => ({
       leaderboard: LeaderboardEntrySchema.array().parse(

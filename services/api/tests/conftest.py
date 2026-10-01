@@ -59,6 +59,27 @@ async def client():
 
 
 @pytest.fixture
+async def fake_redis(monkeypatch):
+    """Redis enabled against fakeredis — shared by redis/intel rate-limit tests."""
+    import fakeredis.aioredis
+
+    from app import redis as redis_mod
+    from app.config import settings
+
+    r = fakeredis.aioredis.FakeRedis(decode_responses=True)
+    # the suite runs with REDIS_URL='' — re-enable the path and hand the
+    # module a fake client so it never pings or builds a real one
+    monkeypatch.setattr(settings, "redis_url", "redis://fake.test:6379/0")
+    monkeypatch.setattr(redis_mod, "_client", r)
+    monkeypatch.setattr(redis_mod, "_retry_at", 0.0)
+    yield r
+    closer = getattr(r, "aclose", None) or r.close
+    result = closer()
+    if hasattr(result, "__await__"):
+        await result
+
+
+@pytest.fixture
 async def alice(client):
     r = await client.post("/api/auth/signup", json={
         "email": "alice@test.io", "password": "secret1", "displayName": "Alice",

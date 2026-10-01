@@ -64,3 +64,9 @@ async def order_limit(user: dict = Depends(require_user)) -> dict:
 async def create_market_limit(user: dict = Depends(require_user)) -> dict:
     await _enforce("creates", f"u{user['id']}", settings.market_creates_per_hour, 3600)
     return user
+
+
+async def intel_limit(user: dict = Depends(require_user)) -> dict:
+    """Briefs and explanations — each one costs an LLM call."""
+    await _enforce("intel", f"u{user['id']}", settings.intel_requests_per_hour, 3600)
+    return user

@@ -15,6 +15,8 @@ import TradePanel from "@/components/TradePanel";
 import PositionCard from "@/components/PositionCard";
 import RecentTrades from "@/components/RecentTrades";
 import MarketCard from "@/components/MarketCard";
+import BriefCard from "@/components/BriefCard";
+import ExplainPanel from "@/components/ExplainPanel";
 
 export default function MarketDetail() {
   const params = useParams<{ slug: string }>();
@@ -174,6 +176,8 @@ export default function MarketDetail() {
             )}
           </div>
 
+          <BriefCard slug={market.slug} />
+
           <RecentTrades market={market} />
 
           {related.length > 0 && (
@@ -290,6 +294,7 @@ function ChartCard({ market }: { market: MarketDetail }) {
         resolvedOutcome={market.outcome}
         emptyMessage={isLoading ? "Loading chart…" : "No trades in this window yet."}
       />
+      <ExplainPanel slug={market.slug} range={range} />
     </div>
   );
 }
