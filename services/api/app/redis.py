@@ -9,6 +9,7 @@ a blip at startup must not disable Redis for the process lifetime. Set
 REDIS_URL="" to disable Redis entirely.
 """
 
+import contextlib
 import logging
 from datetime import timedelta
 from time import monotonic
@@ -108,10 +109,8 @@ async def invalidate_markets_cache() -> None:
     r = await get_redis()
     if r is None:
         return
-    try:
+    with contextlib.suppress(Exception):
         await r.delete(MARKETS_CACHE_KEY)
-    except Exception:
-        pass
 
 
 def reset_for_tests() -> None:

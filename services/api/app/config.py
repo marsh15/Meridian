@@ -47,7 +47,15 @@ class Settings(BaseSettings):
     auth_requests_per_minute: int = 10
     orders_per_minute: int = 30
     market_creates_per_hour: int = 10
-    # OTLP endpoint (http://localhost:4318) — empty disables telemetry
+    # account resets sell back positions and mint the difference — keep the
+    # endpoint from being hammered
+    account_resets_per_hour: int = 5
+    # Trust Fly-Client-IP / X-Forwarded-For for rate limiting only when every
+    # request arrives through a proxy we control that sets them (Fly does).
+    # Otherwise any client could spoof a fresh IP per request.
+    trust_proxy_headers: bool = False
+    # OTLP endpoint (compose publishes the collector on host port 4319) —
+    # empty disables telemetry
     otlp_endpoint: str = ""
     # Intelligence layer (phase 6, ADR 0010): OpenAI-compatible chat
     # endpoint. Point at Ollama (http://localhost:11434/v1) for a free

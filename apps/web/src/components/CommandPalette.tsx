@@ -71,7 +71,7 @@ export default function CommandPalette() {
 function PaletteBody({ onClose }: { onClose: () => void }) {
   const router = useRouter();
   const { user, logout, openAuth } = useAuth();
-  const { closing, close } = useModalLifecycle(onClose);
+  const { closing, close, dialogRef } = useModalLifecycle(onClose);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -191,6 +191,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Command palette"
+        ref={dialogRef}
       >
         <div className="palette-input-row">
           <SearchIcon />

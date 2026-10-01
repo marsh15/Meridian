@@ -1,13 +1,13 @@
 """Chart candles (range bucketing, volume, markers) and public trader
 profiles — the phase 4 product-surface reads."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
 from app.db import engine
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 async def _create_market(client, yes=50):

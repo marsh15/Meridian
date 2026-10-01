@@ -24,12 +24,18 @@ MINTED_SUM = (
 )
 
 
+def _escape_like(s: str) -> str:
+    # % and _ are wildcards in ILIKE — a trader literally named "_" must
+    # not match everyone
+    return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 async def _find_user(session: AsyncSession, name: str) -> dict | None:
     row = (
         await session.execute(
             text("SELECT id, display_name, created_at FROM users "
-                 "WHERE display_name ILIKE :n AND NOT is_house LIMIT 1"),
-            {"n": name.replace("-", " ")},
+                 "WHERE display_name ILIKE :n ESCAPE '\\' AND NOT is_house LIMIT 1"),
+            {"n": _escape_like(name.replace("-", " "))},
         )
     ).first()
     if row is None:

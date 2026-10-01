@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
+import { safeHttpUrl } from "@/lib/safeUrl";
 import { useAuth } from "@/auth/AuthContext";
 import { fmtDate } from "@/lib/format";
 import type { CasePoint } from "@meridian/contracts";
@@ -45,15 +46,17 @@ export default function BriefCard({ slug }: { slug: string }) {
   const { user } = useAuth();
   const qc = useQueryClient();
 
+  // own query key (not under ["market", slug]): tick-driven invalidations
+  // must not re-run the LLM-cached brief fetch
   const { data: brief, isLoading, isError, error } = useQuery({
-    queryKey: ["market", slug, "brief"],
+    queryKey: ["brief", slug],
     queryFn: () => api.marketBrief(slug),
   });
 
   const generate = useMutation({
     mutationFn: () => api.generateBrief(slug),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["market", slug, "brief"] });
+      qc.invalidateQueries({ queryKey: ["brief", slug] });
     },
   });
 
@@ -163,9 +166,12 @@ export default function BriefCard({ slug }: { slug: string }) {
                 <span className="src-idx">[{s.idx}]</span>
                 <a
                   className="src-title"
-                  href={s.url}
+                  href={safeHttpUrl(s.url) ?? "#"}
                   target="_blank"
                   rel="noreferrer"
+                  onClick={(e) => {
+                    if (safeHttpUrl(s.url) == null) e.preventDefault();
+                  }}
                 >
                   {s.title}
                 </a>

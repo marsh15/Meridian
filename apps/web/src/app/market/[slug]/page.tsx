@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { fmtVol, fmtDate } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
@@ -244,9 +244,13 @@ function ChartCard({ market }: { market: MarketDetail }) {
   // (market.price is kept fresh by the SSE stream) instead of refetching
   const [range, setRange] = useState<ChartRangeId>("1d");
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["market", market.slug, "candles", range],
+  // own query key (not under ["market", slug]): tick-driven invalidations
+  // must not refetch three date_bin aggregations; keepPreviousData so a
+  // range switch doesn't blank the chart while loading
+  const { data, isPending } = useQuery({
+    queryKey: ["candles", market.slug, range],
     queryFn: () => api.marketCandles(market.slug, range),
+    placeholderData: keepPreviousData,
   });
 
   const candles = data?.candles ?? [];
@@ -292,7 +296,7 @@ function ChartCard({ market }: { market: MarketDetail }) {
         markers={data?.markers ?? []}
         livePrice={market.price}
         resolvedOutcome={market.outcome}
-        emptyMessage={isLoading ? "Loading chart…" : "No trades in this window yet."}
+        emptyMessage={isPending ? "Loading chart…" : "No trades in this window yet."}
       />
       <ExplainPanel slug={market.slug} range={range} />
     </div>

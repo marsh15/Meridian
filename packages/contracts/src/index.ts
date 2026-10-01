@@ -249,6 +249,34 @@ export const TickSchema = z.object({
   outcome: z.string().nullable(),
 });
 
+// ------------------------------ write paths ---------------------------------
+// The most important responses in the app (fills, balances) parse at the
+// boundary like every read — a server shape change fails loudly here
+// instead of surfacing as NaN balances.
+
+export const FillSchema = z.object({
+  side: z.string(),
+  action: z.string(),
+  shares: z.number(),
+  priceCents: z.number(),
+  amountCents: z.number(),
+});
+
+export const OrderResponseSchema = z.object({
+  fill: FillSchema,
+  market: MarketSummarySchema,
+  position: z.object({ yes: PositionSideSchema, no: PositionSideSchema }),
+  balanceCents: z.number(),
+});
+
+export const CreateMarketResponseSchema = z.object({
+  market: MarketCardSchema,
+});
+
+export const ResolveResponseSchema = z.object({
+  market: MarketSummarySchema,
+});
+
 export type User = z.infer<typeof UserSchema>;
 export type MarketSummary = z.infer<typeof MarketSummarySchema>;
 export type MarketCardData = z.infer<typeof MarketCardSchema>;
@@ -269,3 +297,7 @@ export type Catalyst = z.infer<typeof CatalystSchema>;
 export type Brief = z.infer<typeof BriefSchema>;
 export type Driver = z.infer<typeof DriverSchema>;
 export type Explanation = z.infer<typeof ExplanationSchema>;
+export type Fill = z.infer<typeof FillSchema>;
+export type OrderResponse = z.infer<typeof OrderResponseSchema>;
+export type CreateMarketResponse = z.infer<typeof CreateMarketResponseSchema>;
+export type ResolveResponse = z.infer<typeof ResolveResponseSchema>;

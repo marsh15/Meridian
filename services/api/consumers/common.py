@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import SessionFactory
-from app.telemetry import setup_telemetry
 
 log = logging.getLogger("meridian.consumers")
 
@@ -80,12 +79,15 @@ async def mark_processed(session: AsyncSession, group: str, outbox_id: int) -> b
     return res.rowcount == 1
 
 
-async def _dead_letter(dlq: AIOKafkaProducer, group: str, msg: Any, raw: bytes, err: BaseException) -> None:
+async def _dead_letter(
+    dlq: AIOKafkaProducer, group: str, msg: Any, raw: bytes, err: BaseException
+) -> None:
     await dlq.send_and_wait(
         topic=TOPIC_DLQ,
         key=msg.key,
         value=json.dumps(
-            {"originalTopic": msg.topic, "group": group, "error": repr(err), "raw": raw.decode(errors="replace")}
+            {"originalTopic": msg.topic, "group": group, "error": repr(err),
+             "raw": raw.decode(errors="replace")}
         ).encode(),
         headers=[
             ("original-topic", msg.topic.encode()),
@@ -97,8 +99,11 @@ async def _dead_letter(dlq: AIOKafkaProducer, group: str, msg: Any, raw: bytes, 
 
 async def pump(group: str, topics: list[str], handler: Handler) -> None:
     """Consume forever: apply → commit offset; on handler failure after one
-    retry, dead-letter and commit anyway (a poison message must not wedge
-    the partition)."""
+    retry, dead-letter and commit (a poison message must not wedge the
+    partition). If the DLQ publish itself fails, the offset is NOT
+    committed and the pump re-raises — the supervisor restarts it and the
+    message is redelivered. An event may be applied or dead-lettered, never
+    silently dropped."""
     consumer = AIOKafkaConsumer(
         *topics,
         group_id=group,
@@ -115,7 +120,7 @@ async def pump(group: str, topics: list[str], handler: Handler) -> None:
         while True:
             try:
                 msg = await asyncio.wait_for(consumer.getone(), timeout=15.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 # idle heartbeat: a wedged consumer still shows growing lag
                 await measure_pending(group)
                 last_lag = monotonic()
@@ -124,9 +129,8 @@ async def pump(group: str, topics: list[str], handler: Handler) -> None:
                 event = json.loads(msg.value)
                 for attempt in (1, 2):
                     try:
-                        async with SessionFactory() as session:
-                            async with session.begin():
-                                await handler(session, event)
+                        async with SessionFactory() as session, session.begin():
+                            await handler(session, event)
                         break
                     except Exception:
                         if attempt == 2:
@@ -134,12 +138,19 @@ async def pump(group: str, topics: list[str], handler: Handler) -> None:
                         await asyncio.sleep(0.5)
             except Exception as err:
                 log.exception("[%s] dead-lettering offset %s in %s", group, msg.offset, msg.topic)
-                await _dead_letter(dlq, group, msg, msg.value, err)
-            finally:
-                await consumer.commit()
-                if monotonic() - last_lag >= LAG_INTERVAL:
-                    await measure_pending(group)
-                    last_lag = monotonic()
+                try:
+                    await _dead_letter(dlq, group, msg, msg.value, err)
+                except Exception:
+                    # DLQ down (Kafka outage): raising without committing
+                    # means the supervisor's restart redelivers this event
+                    log.exception("[%s] DLQ publish failed; restarting without commit", group)
+                    raise
+            # reached only after apply or a successful dead-letter — a DLQ
+            # failure re-raised above, so the offset stays uncommitted
+            await consumer.commit()
+            if monotonic() - last_lag >= LAG_INTERVAL:
+                await measure_pending(group)
+                last_lag = monotonic()
     finally:
         await consumer.stop()
         await dlq.stop()
@@ -162,12 +173,11 @@ async def pump_once(group: str, topics: list[str], handler: Handler, timeout_ms:
             batches = await consumer.getmany(timeout_ms=timeout_ms, max_records=50)
             if not batches:
                 break
-            for _tp, messages in batches.items():
+            for messages in batches.values():
                 for msg in messages:
                     event = json.loads(msg.value)
-                    async with SessionFactory() as session:
-                        async with session.begin():
-                            await handler(session, event)
+                    async with SessionFactory() as session, session.begin():
+                        await handler(session, event)
                     processed += 1
                     await consumer.commit()
     finally:

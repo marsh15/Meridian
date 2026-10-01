@@ -4,16 +4,16 @@ resolution from closed, and settlement posting payouts to the ledger."""
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 from sqlalchemy import text
 
 from app.config import settings
-from app.db import SessionFactory, engine
+from app.db import engine
 from app.market_lifecycle import LifecycleError, close_market, settle_market
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 async def _create_market(client, yes=50):
@@ -93,7 +93,8 @@ async def test_settle_market_pays_posts_ledger_and_is_idempotent(client, alice, 
             "side": side, "action": "buy", "dollarsCents": 6_000,
         })
         assert r.status_code == 200, r.text
-    shares = (await ca.get(f"/api/markets/{m['slug']}")).json()["market"]["yourPosition"]["yes"]["shares"]
+    detail = (await ca.get(f"/api/markets/{m['slug']}")).json()["market"]
+    shares = detail["yourPosition"]["yes"]["shares"]
 
     view = await settle_market(mid, "yes")
     assert view["market"]["status"] == "resolved"
@@ -104,9 +105,16 @@ async def test_settle_market_pays_posts_ledger_and_is_idempotent(client, alice, 
 
     assert me_a["balanceCents"] == 100_000 - 6_000 + int(Decimal(str(shares)) * 100)
 
-    # retry is refused — the market is done
+    # same-outcome replay succeeds (a Temporal retry after a lost response
+    # must not fail the workflow) and pays nobody again
+    replay = await settle_market(mid, "yes")
+    assert replay["market"]["status"] == "resolved"
+    me_a2 = (await ca.get("/api/auth/me")).json()["user"]
+    assert me_a2["balanceCents"] == me_a["balanceCents"]
+
+    # a conflicting outcome is still refused
     try:
-        await settle_market(mid, "yes")
+        await settle_market(mid, "no")
         raised = False
     except LifecycleError as err:
         raised = err.reason == "already_resolved"

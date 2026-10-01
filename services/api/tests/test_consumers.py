@@ -3,7 +3,7 @@ emits (real outbox payloads). Duplicates are the contract: applying the
 same event twice must leave every read model unchanged."""
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -11,7 +11,7 @@ from app.db import SessionFactory, engine
 from consumers import analytics, candles, volume
 from relay.main import build_message
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 async def _events_for(client, slug: str | None = None) -> list[dict]:
@@ -33,9 +33,8 @@ async def _events_for(client, slug: str | None = None) -> list[dict]:
 async def _apply_all(events: list[dict]) -> None:
     for module in (candles, volume, analytics):
         for ev in events:
-            async with SessionFactory() as session:
-                async with session.begin():
-                    await module.handle(session, ev)
+            async with SessionFactory() as session, session.begin():
+                await module.handle(session, ev)
 
 
 async def _trade(client, slug, dollars, side="yes"):
@@ -118,7 +117,7 @@ async def test_volume_projector_tracks_lifecycle(client, alice):
         "description": "d", "resolution": "r", "initialYes": 50,
     })
     slug = r.json()["market"]["slug"]
-    fill = await _trade(client, slug, 25)
+    await _trade(client, slug, 25)
     await _trade(client, slug, 15, side="no")
 
     events = await _events_for(client, slug)
@@ -174,7 +173,9 @@ async def test_analytics_facts_are_idempotent(client, alice):
     await _apply_all(events)  # duplicates
 
     async with engine.connect() as conn:
-        facts = (await conn.execute(text("SELECT * FROM trade_facts ORDER BY outbox_id"))).mappings().all()
+        facts = (await conn.execute(
+            text("SELECT * FROM trade_facts ORDER BY outbox_id")
+        )).mappings().all()
     assert len(facts) == 1
     f = facts[0]
     assert f["slug"] == slug
@@ -183,4 +184,4 @@ async def test_analytics_facts_are_idempotent(client, alice):
     assert f["amount_cents"] == 1_000
     assert f["trader"] == "Alice"
     # the fact row's PK is the outbox id — replay-safe by construction
-    assert f["outbox_id"] == [e for e in events if e["type"] == "TradeExecuted"][0]["outboxId"]
+    assert f["outbox_id"] == next(e for e in events if e["type"] == "TradeExecuted")["outboxId"]

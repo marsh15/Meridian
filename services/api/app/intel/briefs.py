@@ -78,7 +78,7 @@ def _sources_block(ranked: list[tuple[float, RawSource]]) -> str:
         return "No external sources were retrieved. Reason from the market data; "\
                "set every citation to null and note the gap in source_note."
     lines = []
-    for i, (score, src) in enumerate(ranked, start=1):
+    for i, (_score, src) in enumerate(ranked, start=1):
         date = src.published_at.strftime("%Y-%m-%d") if src.published_at else "undated"
         snippet = f" — {src.snippet[:220]}" if src.snippet else ""
         lines.append(f"[{i}] {src.title} ({src.publisher}, {date}){snippet}")
@@ -94,22 +94,27 @@ async def generate_brief(market: Any) -> dict[str, Any]:
     query = f"{m['question']} {m['category']}"
     raw = await gather_sources(query)
     ranked = rerank(m["question"], m["description"] or "", m["category"], raw)
-    async with SessionFactory() as session:
-        async with session.begin():
-            stats = await _market_stats(session, m["id"])
+    async with SessionFactory() as session, session.begin():
+        stats = await _market_stats(session, m["id"])
 
     from app.views import market_view
 
     view = market_view(m)
+    closes = (
+        m["closes_at"].isoformat()
+        if hasattr(m["closes_at"], "isoformat")
+        else m["closes_at"]
+    )
     user_prompt = (
         f"Market: {m['question']}\n"
         f"Category: {m['category']}\n"
         f"Description: {m['description'] or '(none)'}\n"
         f"Resolution rules: {m['resolution_rules'] or '(none)'}\n"
-        f"Closes: {m['closes_at'].isoformat() if hasattr(m['closes_at'], 'isoformat') else m['closes_at']}\n"
+        f"Closes: {closes}\n"
         f"Current YES price: {view['price']} cents (24h change {view['change24h']:+d})\n"
         f"Volume traded: ${view['volumeCents'] / 100:,.0f} across {view['traders']} traders\n"
-        f"Price trend (oldest→newest, cents): {stats['recent_prices'][-12:]} ({stats['direction']})\n"
+        f"Price trend (oldest→newest, cents): {stats['recent_prices'][-12:]} "
+        f"({stats['direction']})\n"
         f"Open interest: {stats['open_interest_shares']} shares; "
         f"top-3 holders own {int(stats['top3_concentration'] * 100)}%\n\n"
         f"Sources:\n{_sources_block(ranked)}\n\n"
@@ -121,9 +126,22 @@ async def generate_brief(market: Any) -> dict[str, Any]:
         {"role": "user", "content": user_prompt},
     ])
 
-    assessments = {int(a["idx"]): a.get("quality", "medium")
-                   for a in data.get("source_assessments", [])
-                   if isinstance(a, dict) and "idx" in a}
+    # model output is untrusted: coerce idx defensively (anything that
+    # isn't an int-like ≥1 is skipped) and clamp quality to the enum — a
+    # capitalized "High" must 502-proof the pipeline, not 500 it
+    def _valid_quality(v: Any) -> str:
+        return v if isinstance(v, str) and v in ("high", "medium", "low") else "medium"
+
+    assessments: dict[int, str] = {}
+    for a in data.get("source_assessments", []):
+        if not isinstance(a, dict):
+            continue
+        idx = a.get("idx")
+        if isinstance(idx, bool) or not isinstance(idx, (int, float)):
+            continue
+        i = int(idx)
+        if i >= 1:
+            assessments[i] = _valid_quality(a.get("quality"))
     sources = [
         Source(
             idx=i,

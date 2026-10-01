@@ -68,15 +68,23 @@ The same checks the post-deploy section asks for, against compose Postgres:
 ```sh
 docker compose up -d --wait db
 docker build -t meridian-single .
-docker run --rm --entrypoint sh meridian-single \
+# env flags go BEFORE the image name; the entrypoint deliberately runs no
+# migrations (Fly's release phase owns them), so a non-Fly host applies
+# them explicitly here before first boot
+docker run --rm --entrypoint sh \
   -e DATABASE_URL="postgresql+asyncpg://meridian:meridian@host.docker.internal:5434/meridian" \
-  -c "cd /srv/api && .venv/bin/alembic upgrade head"
-docker run -d --name meridian-verify -p 8400:3000 \
+  meridian-single -c "cd /srv/api && .venv/bin/alembic upgrade head"
+docker run -d --name meridian-verify -p 127.0.0.1:8400:3000 \
   -e DATABASE_URL="postgresql+asyncpg://meridian:meridian@host.docker.internal:5434/meridian" \
   -e REDIS_URL="" meridian-single
-curl -N localhost:8400/api/markets/<slug>/stream   # ticks arrive unbuffered
+curl -N localhost:8400/api/health                     # {"ok":true}
+curl -N localhost:8400/api/markets/<slug>/stream      # ticks arrive unbuffered
 docker rm -f meridian-verify
 ```
+
+On any host that isn't Fly (which runs `alembic upgrade head` in its
+release phase), run the migration command above once per deploy before
+starting the container — the entrypoint never migrates.
 
 ## Scaling past one machine
 

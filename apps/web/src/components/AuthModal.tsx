@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/auth/AuthContext";
 import { useModalLifecycle } from "@/hooks/useModalLifecycle";
 
@@ -27,9 +27,16 @@ function AuthModalBody({ mode }: { mode: "login" | "signup" }) {
   const { closeAuth, openAuth, login, signup } = useAuth();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const { closing, close } = useModalLifecycle(closeAuth);
+  const { closing, close, dialogRef } = useModalLifecycle(closeAuth);
 
   const isSignup = mode === "signup";
+
+  // the same component instance survives a tab switch — stale error/busy
+  // state must not leak across modes
+  useEffect(() => {
+    setError("");
+    setBusy(false);
+  }, [mode]);
 
   async function submit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -60,6 +67,7 @@ function AuthModalBody({ mode }: { mode: "login" | "signup" }) {
         role="dialog"
         aria-modal="true"
         aria-label={isSignup ? "Create an account" : "Sign in"}
+        ref={dialogRef}
       >
         <button className="modal-x" onClick={close} aria-label="Close">
           <CloseIcon />
@@ -96,6 +104,7 @@ function AuthModalBody({ mode }: { mode: "login" | "signup" }) {
                 name="displayName"
                 placeholder="How you appear on markets"
                 maxLength={40}
+                autoComplete="nickname"
                 autoFocus
               />
             </label>
@@ -106,6 +115,7 @@ function AuthModalBody({ mode }: { mode: "login" | "signup" }) {
               name="email"
               type="email"
               placeholder="you@example.com"
+              autoComplete="email"
               required
               autoFocus={!isSignup}
             />
@@ -116,6 +126,7 @@ function AuthModalBody({ mode }: { mode: "login" | "signup" }) {
               name="password"
               type="password"
               placeholder="At least 6 characters"
+              autoComplete={isSignup ? "new-password" : "current-password"}
               required
               minLength={6}
             />

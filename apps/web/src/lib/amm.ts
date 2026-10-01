@@ -20,12 +20,16 @@ export function sharesForDollars(
   qYes: number, qNo: number, side: "yes" | "no", dollars: number,
 ): number {
   const c0 = cost(qYes, qNo);
+  const spent = (shares: number) =>
+    side === "yes" ? cost(qYes + shares, qNo) - c0 : cost(qYes, qNo + shares) - c0;
   let lo = 0;
   let hi = Math.max(dollars * 120, 1);
+  // a marginal price under ~0.83¢ makes the true fill exceed the naive
+  // dollars*120 bracket — grow it until it contains the root (mirrors amm.py)
+  while (spent(hi) < dollars) hi *= 2;
   for (let i = 0; i < 80; i++) {
     const mid = (lo + hi) / 2;
-    const c = side === "yes" ? cost(qYes + mid, qNo) : cost(qYes, qNo + mid);
-    if (c - c0 < dollars) lo = mid;
+    if (spent(mid) < dollars) lo = mid;
     else hi = mid;
   }
   return (lo + hi) / 2;

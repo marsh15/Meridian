@@ -6,9 +6,10 @@ inside the window. The model explains OUR numbers; sources only add
 context.
 """
 
+import itertools
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import text
@@ -66,7 +67,7 @@ async def _window_data(session: AsyncSession, market_id: int, since: datetime) -
     start = int(prices[0].price_cents) if prices else None
     end = int(prices[-1].price_cents) if prices else None
     biggest_move = 0
-    for prev, cur in zip(prices, prices[1:]):
+    for prev, cur in itertools.pairwise(prices):
         biggest_move = max(biggest_move, abs(int(cur.price_cents) - int(prev.price_cents)))
 
     buy_yes = sum(int(t.amount_cents) for t in trades
@@ -97,8 +98,8 @@ async def generate_explanation(
 ) -> dict[str, Any]:
     from app.db import SessionFactory
 
-    now = datetime.now(timezone.utc)
-    since = now - window if window is not None else datetime(2020, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(UTC)
+    since = now - window if window is not None else datetime(2020, 1, 1, tzinfo=UTC)
     async with SessionFactory() as session:
         data = await _window_data(session, market["id"], since)
 
@@ -121,7 +122,8 @@ async def generate_explanation(
         f"Market: {market['question']} (closes {market['closes_at']})\n"
         f"Range analyzed: {range_key} ({since.strftime('%Y-%m-%d %H:%M')} → now)\n"
         f"YES price: {data['start_price']}¢ → {data['end_price']}¢ "
-        f"({'+' if delta is not None and delta >= 0 else ''}{delta}¢) over {data['points']} price points\n"
+        f"({'+' if delta is not None and delta >= 0 else ''}{delta}¢) "
+        f"over {data['points']} price points\n"
         f"Biggest single move: {data['biggest_single_move_cents']}¢\n"
         f"Trades in window: {data['trade_count']} "
         f"(YES-bought ${data['yes_bought_cents'] / 100:,.0f} vs YES-sold "

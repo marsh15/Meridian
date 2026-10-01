@@ -15,7 +15,7 @@ export default function MarketCard({
 
   return (
     <Link
-      href={`/market/${market.id}`}
+      href={`/market/${market.slug}`}
       className={`card market-card ${resolved ? "is-resolved" : ""}`}
       style={{ animationDelay: `${Math.min(index, 10) * 40}ms` }}
     >

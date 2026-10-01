@@ -46,10 +46,15 @@ The relay (`services/api/relay/main.py`) runs one cycle at a time:
    by `market_id`, `acks=all`, in outbox-id order.
 3. Mark the rows `published_at = now()` and commit — releasing the locks.
 
-Two relay instances are safe: `SKIP LOCKED` makes the second one
-work-steal instead of block, and because the locks live until the marks
-commit, two live relays can never publish the same row. The only source
-of duplicate publishes is a crash, never concurrency.
+Two relay instances never double-publish: `SKIP LOCKED` makes the second
+one work-steal instead of block, and because the locks live until the
+marks commit, two live relays can never publish the same row. But
+**per-market order (below) only holds with one relay publishing** — a
+second relay claiming the next batch can commit a market's later events
+while the first relay is still publishing its earlier ones. The relay
+therefore holds a Postgres advisory lock as a leadership lease: a second
+instance exits at boot instead of splitting the ordering. The only
+source of duplicate publishes is a crash, never concurrency.
 
 ### The crash windows
 
@@ -72,7 +77,11 @@ the complexity budget there.
 
 Every message is keyed by `market_id`, so the partitioner sends all
 events of one market to one partition, and a partition is an append-only
-log: order in, order out. Within a market, outbox-id order is execution
+log: order in, order out. (Order holds per *topic*: trade and lifecycle
+events ride separate topics, so the candles consumer guards against a
+pre-resolution trade landing after `MarketResolved` — it checks the
+market's status and skips the candle upsert, keeping the settlement
+candle final.) Within a market, outbox-id order is execution
 order, because trades serialize on the market row lock (ADR 0001) and
 each trade takes its outbox id inside that serialized transaction.
 Markets interleave freely; no consumer reads across markets expecting a
@@ -80,11 +89,12 @@ global order.
 
 ### Unknown event types
 
-`relay.main.topic_for` returns no topic for a type it does not know. The
-row stays unpublished, the relay logs an error every cycle, and the
-outbox lag makes the gap visible. Adding an event type therefore means
-teaching the relay its topic — a deliberate coupling so new events cannot
-silently vanish into a default topic.
+`relay.main.topic_for` returns no topic for a type it does not know.
+Such rows are quarantined to `exchange.dlq` and marked published — left
+unpublished they would sit at the head of the id-ordered claim forever,
+and 200 of them would wedge every batch behind them. Adding an event
+type therefore means teaching the relay its topic — a deliberate
+coupling so new events cannot silently vanish into a default topic.
 
 ## What consumers guarantee
 
@@ -106,8 +116,9 @@ If the insert returns a row, the group has not seen the event, and the
 handler applies the read-model change in that same transaction. If it
 returns none, the handler skips. Apply and marker commit together or not
 at all, so a duplicate can never half-apply — application is
-effectively-once. `trade_facts` needs no marker: its primary key is the
-outbox id, so a replayed insert is a no-op by construction.
+effectively-once. `trade_facts` is also protected by its primary key
+(the outbox id — a replayed insert is a no-op by construction) but
+inserts the marker anyway, keeping group semantics uniform.
 
 ### Rebuilding a read model
 
@@ -125,7 +136,12 @@ A handler that raises — bad payload, schema drift, a bug — retries once
 inside the consumer. If it raises again, the consumer publishes the raw
 message to `exchange.dlq` with headers (`original-topic`,
 `consumer-group`, `error`), commits the offset, and moves on. A poison
-message must never wedge a partition behind it forever.
+message must never wedge a partition behind it forever. If the DLQ
+publish itself fails (Kafka down), the offset is **not** committed: the
+pump re-raises, its supervisor restarts it with backoff, and the message
+is redelivered — an event is applied or dead-lettered, never silently
+dropped. Each group's pump is supervised independently, so one group
+crashing never stops the other two.
 
 The DLQ is diagnostics-first. To inspect it:
 

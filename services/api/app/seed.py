@@ -7,7 +7,7 @@ Run: uv run python -m app.seed
 """
 
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
@@ -15,95 +15,95 @@ from app.amm import opening_q, price_yes, proceeds_for_shares, shares_for_dollar
 from app.db import SessionFactory
 
 SEED_MARKETS = [
-    dict(id="fed-cut-nov-2026", ticker="FED.CUT26",
-         question="Will the Fed cut rates at the November 2026 meeting?",
-         category="Economics", yes=68, volume=4_820_000, traders=11_400, closes="2026-11-05",
-         description=("This market resolves YES if the Federal Open Market Committee lowers the "
+    {"id": "fed-cut-nov-2026", "ticker": "FED.CUT26",
+         "question": "Will the Fed cut rates at the November 2026 meeting?",
+         "category": "Economics", "yes": 68, "volume": 4_820_000, "traders": 11_400, "closes": "2026-11-05",
+         "description": ("This market resolves YES if the Federal Open Market Committee lowers the "
                       "federal funds target rate at its November 2026 meeting. Futures pricing has "
                       "swung between 55¢ and 75¢ over the past month as CPI prints and labor data "
                       "alternately embolden and restrain the doves."),
-         resolution=("Resolves YES if the FOMC statement released after the November 3–4, 2026 "
-                     "meeting announces a lower target range for the federal funds rate.")),
-    dict(id="democrat-wins-2028", ticker="POTUS.28D",
-         question="Will a Democrat win the 2028 US presidential election?",
-         category="Politics", yes=54, volume=12_750_000, traders=41_200, closes="2028-11-07",
-         description=("Resolves YES if the Democratic nominee wins a majority of the electoral "
+         "resolution": ("Resolves YES if the FOMC statement released after the November 3–4, 2026 "
+                     "meeting announces a lower target range for the federal funds rate.")},
+    {"id": "democrat-wins-2028", "ticker": "POTUS.28D",
+         "question": "Will a Democrat win the 2028 US presidential election?",
+         "category": "Politics", "yes": 54, "volume": 12_750_000, "traders": 41_200, "closes": "2028-11-07",
+         "description": ("Resolves YES if the Democratic nominee wins a majority of the electoral "
                       "college in the 2028 US presidential election, as certified by Congress. "
                       "Early trading typically tracks generic-ballot polling and incumbent-party "
                       "fatigue measures."),
-         resolution="Resolves per the certification of the 2028 electoral college results by a joint session of Congress."),
-    dict(id="btc-150k-2026", ticker="BTC.150K",
-         question="Will Bitcoin close above $150,000 on Dec 31, 2026?",
-         category="Crypto", yes=32, volume=8_930_000, traders=26_800, closes="2026-12-31",
-         description=("Resolves YES if the BTC/USD price on Coinbase closes at or above $150,000 "
+         "resolution": "Resolves per the certification of the 2028 electoral college results by a joint session of Congress."},
+    {"id": "btc-150k-2026", "ticker": "BTC.150K",
+         "question": "Will Bitcoin close above $150,000 on Dec 31, 2026?",
+         "category": "Crypto", "yes": 32, "volume": 8_930_000, "traders": 26_800, "closes": "2026-12-31",
+         "description": ("Resolves YES if the BTC/USD price on Coinbase closes at or above $150,000 "
                       "at 23:59:59 UTC on December 31, 2026. The market peaked at 71¢ after the "
                       "spring halving rally before fading alongside risk-off macro sentiment."),
-         resolution="Resolves using the 1-day candle close on Coinbase for December 31, 2026, in UTC."),
-    dict(id="spx-7500-2026", ticker="SPX.7500",
-         question="Will the S&P 500 finish 2026 above 7,500?",
-         category="Economics", yes=46, volume=5_640_000, traders=18_700, closes="2026-12-31",
-         description=("Resolves YES if the S&P 500 index closes above 7,500 on the final trading "
+         "resolution": "Resolves using the 1-day candle close on Coinbase for December 31, 2026, in UTC."},
+    {"id": "spx-7500-2026", "ticker": "SPX.7500",
+         "question": "Will the S&P 500 finish 2026 above 7,500?",
+         "category": "Economics", "yes": 46, "volume": 5_640_000, "traders": 18_700, "closes": "2026-12-31",
+         "description": ("Resolves YES if the S&P 500 index closes above 7,500 on the final trading "
                       "day of 2026. Earnings breadth has been strong, but multiple expansion is "
                       "stretched by historical standards — traders are split almost down the middle."),
-         resolution="Resolves to the official closing print of the S&P 500 on the last NYSE trading day of 2026."),
-    dict(id="apple-ar-headset", ticker="AAPL.AR",
-         question="Will Apple announce a new AR headset in 2026?",
-         category="Tech", yes=41, volume=2_210_000, traders=9_400, closes="2026-12-31",
-         description=("Resolves YES if Apple formally announces a new augmented-reality headset "
+         "resolution": "Resolves to the official closing print of the S&P 500 on the last NYSE trading day of 2026."},
+    {"id": "apple-ar-headset", "ticker": "AAPL.AR",
+         "question": "Will Apple announce a new AR headset in 2026?",
+         "category": "Tech", "yes": 41, "volume": 2_210_000, "traders": 9_400, "closes": "2026-12-31",
+         "description": ("Resolves YES if Apple formally announces a new augmented-reality headset "
                       "(or major successor to Vision Pro) at any point during calendar year 2026. "
                       "Leaked CAD drawings and display orders have kept this market lively despite "
                       "no official word."),
-         resolution="Resolves YES upon an Apple press release or keynote announcement of a new AR headset product."),
-    dict(id="starship-mars-2026", ticker="STSHIP.MRS",
-         question="Will SpaceX Starship depart for Mars in 2026?",
-         category="Science", yes=12, volume=1_310_000, traders=7_100, closes="2026-12-31",
-         description=("Resolves YES if a Starship vehicle departs Earth orbit on a Mars transfer "
+         "resolution": "Resolves YES upon an Apple press release or keynote announcement of a new AR headset product."},
+    {"id": "starship-mars-2026", "ticker": "STSHIP.MRS",
+         "question": "Will SpaceX Starship depart for Mars in 2026?",
+         "category": "Science", "yes": 12, "volume": 1_310_000, "traders": 7_100, "closes": "2026-12-31",
+         "description": ("Resolves YES if a Starship vehicle departs Earth orbit on a Mars transfer "
                       "trajectory before the end of 2026. The Hohmann transfer window opens in "
                       "October, but unfueled-dep skepticism keeps this market cheap."),
-         resolution="Resolves YES if SpaceX confirms a trans-Mars injection burn of a Starship vehicle in 2026."),
-    dict(id="ai-film-oscar-2030", ticker="AI.OSCAR30",
-         question="Will an AI-generated film win an Oscar by 2030?",
-         category="Culture", yes=24, volume=980_000, traders=5_900, closes="2030-03-31",
-         description=("Resolves YES if a film that uses AI-generated video for a majority of its "
+         "resolution": "Resolves YES if SpaceX confirms a trans-Mars injection burn of a Starship vehicle in 2026."},
+    {"id": "ai-film-oscar-2030", "ticker": "AI.OSCAR30",
+         "question": "Will an AI-generated film win an Oscar by 2030?",
+         "category": "Culture", "yes": 24, "volume": 980_000, "traders": 5_900, "closes": "2030-03-31",
+         "description": ("Resolves YES if a film that uses AI-generated video for a majority of its "
                       "runtime wins any Academy Award in a competitive category before the March "
                       "2030 ceremony. Current Academy rules require disclosed human authorship for "
                       "eligibility in some categories."),
-         resolution="Resolves YES per the Academy of Motion Picture Arts and Sciences official winners list."),
-    dict(id="swift-tour-2027", ticker="TSWIFT.27",
-         question="Will Taylor Swift announce a 2027 world tour?",
-         category="Culture", yes=58, volume=1_740_000, traders=9_900, closes="2027-06-30",
-         description=("Resolves YES if Taylor Swift or her label officially announces a concert "
+         "resolution": "Resolves YES per the Academy of Motion Picture Arts and Sciences official winners list."},
+    {"id": "swift-tour-2027", "ticker": "TSWIFT.27",
+         "question": "Will Taylor Swift announce a 2027 world tour?",
+         "category": "Culture", "yes": 58, "volume": 1_740_000, "traders": 9_900, "closes": "2027-06-30",
+         "description": ("Resolves YES if Taylor Swift or her label officially announces a concert "
                       "tour with dates in 2027. Historically, tour announcements follow roughly "
                       "4–8 months after a major album release cycle."),
-         resolution="Resolves YES on an official artist or label announcement of a tour including 2027 dates."),
-    dict(id="nyc-90-christmas", ticker="NYC.XMAS90",
-         question="Will NYC hit 90°F on Christmas Day 2026?",
-         category="Weather", yes=4, volume=340_000, traders=3_300, closes="2026-12-25",
-         description=("Resolves YES if the National Weather Service records a temperature of 90°F "
+         "resolution": "Resolves YES on an official artist or label announcement of a tour including 2027 dates."},
+    {"id": "nyc-90-christmas", "ticker": "NYC.XMAS90",
+         "question": "Will NYC hit 90°F on Christmas Day 2026?",
+         "category": "Weather", "yes": 4, "volume": 340_000, "traders": 3_300, "closes": "2026-12-25",
+         "description": ("Resolves YES if the National Weather Service records a temperature of 90°F "
                       "or higher in Central Park on December 25, 2026. The all-time record for "
                       "that date is 64°F, set in 1964 — hence the deep longshot pricing."),
-         resolution="Resolves to the NWS Central Park daily high for December 25, 2026."),
-    dict(id="eth-flips-btc", ticker="ETH.FLIP",
-         question="Will Ethereum flip Bitcoin market cap by 2028?",
-         category="Crypto", yes=8, volume=1_120_000, traders=6_100, closes="2028-12-31",
-         description=("Resolves YES if Ethereum market capitalization exceeds Bitcoin market "
+         "resolution": "Resolves to the NWS Central Park daily high for December 25, 2026."},
+    {"id": "eth-flips-btc", "ticker": "ETH.FLIP",
+         "question": "Will Ethereum flip Bitcoin market cap by 2028?",
+         "category": "Crypto", "yes": 8, "volume": 1_120_000, "traders": 6_100, "closes": "2028-12-31",
+         "description": ("Resolves YES if Ethereum market capitalization exceeds Bitcoin market "
                       "capitalization on any day before January 1, 2029, per CoinGecko aggregated "
                       "data. ETH last closed the gap to under 40% of BTC cap in 2021."),
-         resolution="Resolves YES if ETH market cap exceeds BTC market cap at any daily close before 2029."),
-    dict(id="artemis-moon-2027", ticker="ARTEMIS.MN",
-         question="Will astronauts land on the Moon before 2028?",
-         category="Science", yes=61, volume=2_010_000, traders=8_800, closes="2027-12-31",
-         description=("Resolves YES if a crewed spacecraft touches down on the lunar surface with "
+         "resolution": "Resolves YES if ETH market cap exceeds BTC market cap at any daily close before 2029."},
+    {"id": "artemis-moon-2027", "ticker": "ARTEMIS.MN",
+         "question": "Will astronauts land on the Moon before 2028?",
+         "category": "Science", "yes": 61, "volume": 2_010_000, "traders": 8_800, "closes": "2027-12-31",
+         "description": ("Resolves YES if a crewed spacecraft touches down on the lunar surface with "
                       "living astronauts aboard before January 1, 2028. No human has walked on "
                       "the Moon since Apollo 17 in December 1972."),
-         resolution="Resolves YES upon confirmed crewed lunar surface landing per NASA or the operating agency."),
-    dict(id="chiefs-sb-lxi", ticker="KC.SB61",
-         question="Will the Chiefs reach Super Bowl LXI?",
-         category="Sports", yes=37, volume=3_320_000, traders=22_400, closes="2027-02-14",
-         description=("Resolves YES if the Kansas City Chiefs play in Super Bowl LXI in February "
+         "resolution": "Resolves YES upon confirmed crewed lunar surface landing per NASA or the operating agency."},
+    {"id": "chiefs-sb-lxi", "ticker": "KC.SB61",
+         "question": "Will the Chiefs reach Super Bowl LXI?",
+         "category": "Sports", "yes": 37, "volume": 3_320_000, "traders": 22_400, "closes": "2027-02-14",
+         "description": ("Resolves YES if the Kansas City Chiefs play in Super Bowl LXI in February "
                       "2027. Dynasty pricing is getting expensive against a deeper field of AFC "
                       "contenders than at any point in the Mahomes era."),
-         resolution="Resolves YES if the Chiefs appear in Super Bowl LXI, per the NFL."),
+         "resolution": "Resolves YES if the Chiefs appear in Super Bowl LXI, per the NFL."},
 ]
 
 DEMO_TRADERS = [
@@ -114,21 +114,21 @@ DEMO_TRADERS = [
 ]
 
 EXTRA_MARKETS = [
-    dict(slug="openai-gpt6-july-2027", ticker="OAI.GPT6",
-         question="Will OpenAI ship a GPT-6 model before July 2027?",
-         category="Tech", yes=44, closes="2027-06-30", by="Maya Chen",
-         description=("Resolves YES if OpenAI publicly releases a model branded GPT-6 (or "
+    {"slug": "openai-gpt6-july-2027", "ticker": "OAI.GPT6",
+         "question": "Will OpenAI ship a GPT-6 model before July 2027?",
+         "category": "Tech", "yes": 44, "closes": "2027-06-30", "by": "Maya Chen",
+         "description": ("Resolves YES if OpenAI publicly releases a model branded GPT-6 (or "
                       "equivalent flagship successor) before July 1, 2027. Release cadence "
                       "assumptions are the main swing factor — the crowd has bounced between "
                       "35¢ and 55¢ since opening."),
-         resolution="Resolves YES upon public availability of a GPT-6-branded model per OpenAI announcements."),
-    dict(slug="knicks-ecf-2027", ticker="NYK.ECF27",
-         question="Will the Knicks reach the 2027 Eastern Conference Finals?",
-         category="Sports", yes=29, closes="2027-06-15", by="Marcus Webb",
-         description=("Resolves YES if the New York Knicks appear in the 2027 Eastern Conference "
+         "resolution": "Resolves YES upon public availability of a GPT-6-branded model per OpenAI announcements."},
+    {"slug": "knicks-ecf-2027", "ticker": "NYK.ECF27",
+         "question": "Will the Knicks reach the 2027 Eastern Conference Finals?",
+         "category": "Sports", "yes": 29, "closes": "2027-06-15", "by": "Marcus Webb",
+         "description": ("Resolves YES if the New York Knicks appear in the 2027 Eastern Conference "
                       "Finals. Health-adjusted depth models put them firmly in the contender mix, "
                       "but the East is brutal at the top."),
-         resolution="Resolves YES if the Knicks play in the 2027 ECF, per the NBA."),
+         "resolution": "Resolves YES if the Knicks play in the 2027 ECF, per the NBA."},
 ]
 
 
@@ -146,7 +146,7 @@ def gen_history(seed_id: str, current: float, n: int = 48) -> list[int]:
 
 
 async def insert_history(session, market_id: int, history: list[int], days_span: float) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     rows = []
     for i, p in enumerate(history):
         days_ago = days_span - (days_span / (len(history) - 1)) * i
@@ -166,7 +166,7 @@ async def seed_sample_markets(session) -> None:
                  "ON CONFLICT (email) DO UPDATE SET display_name = 'Meridian' RETURNING id")
         )
     ).scalar_one()
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for m in SEED_MARKETS:
         q_yes, q_no = opening_q(m["yes"])
         mid = (
@@ -211,11 +211,11 @@ async def seed_demo_activity(session) -> None:
             )
         ).scalar_one()
         user_ids[name] = uid
-    balances = {uid: 100_000 for uid in user_ids.values()}
+    balances = dict.fromkeys(user_ids.values(), 100000)
     ids = list(user_ids.values())
 
     # a couple of extra markets authored by named demo traders
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     for x in EXTRA_MARKETS:
         q_yes, q_no = opening_q(x["yes"])
         await session.execute(

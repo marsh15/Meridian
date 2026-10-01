@@ -10,7 +10,7 @@ never reaches the test database's foreign keys."""
 import socket
 import subprocess
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -24,7 +24,7 @@ from consumers.common import pump_once
 from relay import main as relay_main
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 TEST_TRADES = "exchange.test-trade-events"
 TEST_MARKETS = "exchange.test-market-events"
@@ -38,7 +38,9 @@ def _kafka_up() -> bool:
         return False
 
 
-pytestmark = pytest.mark.skipif(not _kafka_up(), reason="Kafka not running — `docker compose up -d kafka`")
+pytestmark = pytest.mark.skipif(
+    not _kafka_up(), reason="Kafka not running — `docker compose up -d kafka`"
+)
 
 
 def _kadmin(*args: str) -> None:

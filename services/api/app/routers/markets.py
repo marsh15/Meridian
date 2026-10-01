@@ -4,12 +4,13 @@ of the Express endpoints in server/index.js. Trades serialize on row locks
 transactional-outbox event and fires pg_notify for the SSE stream."""
 
 import hashlib
+import itertools
 import json
 import math
 import random
 import re
 import string
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from time import perf_counter
 from typing import Any
@@ -25,7 +26,6 @@ from app.config import CATEGORIES, settings
 from app.db import get_session
 from app.deps import current_user, require_user
 from app.events import record_event
-from app import ledger
 from app.ratelimit import create_market_limit, order_limit
 from app.redis import (
     MARKETS_CACHE_KEY,
@@ -33,7 +33,7 @@ from app.redis import (
     cache_set_json,
     invalidate_markets_cache,
 )
-from app.views import decimal_shares, market_view, select_market, tick_payload
+from app.views import decimal_shares, market_view, select_market
 
 router = APIRouter(prefix="/api")
 
@@ -121,7 +121,8 @@ async def list_markets(session: AsyncSession = Depends(get_session)) -> dict:
     rows = (await session.execute(select_market(" ORDER BY m.created_at DESC"))).mappings().all()
     history = (
         await session.execute(
-            text("SELECT market_id, price_cents FROM price_history ORDER BY market_id, created_at, id")
+            text("SELECT market_id, price_cents FROM price_history "
+                 "ORDER BY market_id, created_at, id")
         )
     ).mappings().all()
     by_market: dict[int, list[int]] = {}
@@ -160,45 +161,58 @@ async def create_market(
         raise HTTPException(400, "A valid close date is required.")
     try:
         close = datetime.fromisoformat(f"{body.closesAt}T23:59:59+00:00")
-    except ValueError:
-        raise HTTPException(400, "A valid close date is required.")
-    if close < datetime.now(timezone.utc):
+    except ValueError as err:
+        raise HTTPException(400, "A valid close date is required.") from err
+    if close < datetime.now(UTC):
         raise HTTPException(400, "Close date must be in the future.")
     p = body.initialYes
     if p is None or not float(p).is_integer() or not 5 <= p <= 95:
         raise HTTPException(400, "Opening YES price must be 5–95¢.")
 
-    slug = market_slug(q)
-    ticker = (
-        re.sub(r"[^A-Z]", "", cat[:4].upper()) + "." + re.sub(r"[^A-Z0-9]", "", slug[-4:].upper())
-    ) or "MKT"
     q_yes, q_no = opening_q(int(p))
 
-    async with session.begin():
-        row = (
-            await session.execute(
-                text(
-                    "INSERT INTO markets (slug, ticker, question, category, description, "
-                    "resolution_rules, closes_at, creator_id, q_yes, q_no) "
-                    "VALUES (:slug,:ticker,:q,:cat,:descr,:res,:close,:creator,:qy,:qn) RETURNING *"
-                ),
-                {
-                    "slug": slug, "ticker": ticker, "q": q, "cat": cat,
-                    "descr": (body.description or "").strip(),
-                    "res": (body.resolution or "").strip(),
-                    "close": close, "creator": user["id"], "qy": q_yes, "qn": q_no,
-                },
-            )
-        ).first()
-        m = row._mapping
-        await session.execute(
-            text("INSERT INTO price_history (market_id, price_cents) VALUES (:m, :p)"),
-            {"m": m["id"], "p": int(p)},
-        )
-        await record_event(
-            session, aggregate=f"market:{slug}", event_type="MarketCreated",
-            payload={"slug": slug, "question": q, "category": cat, "openingYesCents": int(p)},
-        )
+    # random 4-char suffixes collide rarely; retry instead of 500ing on one
+    from sqlalchemy.exc import IntegrityError
+
+    for _ in range(3):
+        slug = market_slug(q)
+        ticker = (
+            re.sub(r"[^A-Z]", "", cat[:4].upper()) + "." + \
+                re.sub(r"[^A-Z0-9]", "", slug[-4:].upper())
+        ) or "MKT"
+        try:
+            async with session.begin():
+                row = (
+                    await session.execute(
+                        text(
+                            "INSERT INTO markets (slug, ticker, question, category, description, "
+                            "resolution_rules, closes_at, creator_id, q_yes, q_no) "
+                            "VALUES (:slug,:ticker,:q,:cat,:descr,:res,:close,:"
+                            "creator,:qy,:qn) RETURNING *"
+                        ),
+                        {
+                            "slug": slug, "ticker": ticker, "q": q, "cat": cat,
+                            "descr": (body.description or "").strip(),
+                            "res": (body.resolution or "").strip(),
+                            "close": close, "creator": user["id"], "qy": q_yes, "qn": q_no,
+                        },
+                    )
+                ).first()
+                m = row._mapping
+                await session.execute(
+                    text("INSERT INTO price_history (market_id, price_cents) VALUES (:m, :p)"),
+                    {"m": m["id"], "p": int(p)},
+                )
+                await record_event(
+                    session, aggregate=f"market:{slug}", event_type="MarketCreated",
+                    payload={"slug": slug, "question": q, "category": cat,
+                             "openingYesCents": int(p)},
+                )
+            break
+        except IntegrityError:
+            continue
+    else:
+        raise HTTPException(500, "Could not allocate a unique market slug — try again.")
     # the committed market must be in the very next list read — a lingering
     # 2s-TTL entry would hide it (post-commit purge; concurrent refills
     # between commit and purge are killed by the delete too)
@@ -207,7 +221,7 @@ async def create_market(
         "market": market_view(
             {**m, "creator_name": user["display_name"], "trade_volume_cents": 0,
              "trade_traders": 0, "price_24h_ago": None},
-            history=[{"price": int(p), "at": m["created_at"].isoformat()}],
+            history=[int(p)],
         )
     }
 
@@ -262,7 +276,8 @@ async def market_detail(
             tradesNextBeforeId=trades_next,
             historyNextBeforeId=history_next,
             holders=[
-                {"trader": h["display_name"], "side": h["side"], "shares": round(float(h["shares"]), 1)}
+                {"trader": h["display_name"], "side": h["side"],
+                 "shares": round(float(h["shares"]), 1)}
                 for h in holders
             ],
             yourPosition=position,
@@ -334,7 +349,7 @@ async def market_candles(
     params: dict[str, Any] = {"m": m["id"], "bucket": bucket}
     since_sql = ""
     if window is not None:
-        params["since"] = datetime.now(timezone.utc) - window
+        params["since"] = datetime.now(UTC) - window
         since_sql = "AND h.created_at >= :since"
 
     price_rows = (
@@ -423,11 +438,11 @@ async def market_candles(
     if len(candles) >= 3:
         from statistics import median
 
-        deltas = [abs(cur["c"] - prev["c"]) for prev, cur in zip(candles, candles[1:])]
+        deltas = [abs(cur["c"] - prev["c"]) for prev, cur in itertools.pairwise(candles)]
         # median, not mean: the moves being detected are exactly the
         # outliers that would inflate a mean-based threshold
         move_thr = max(8, round(2 * median(deltas)))
-        for prev, cur in zip(candles, candles[1:]):
+        for prev, cur in itertools.pairwise(candles):
             delta = cur["c"] - prev["c"]
             if abs(delta) >= move_thr:
                 markers.append({
@@ -479,6 +494,14 @@ async def place_order(
         raise HTTPException(400, "Side must be yes or no.")
     if action not in ("buy", "sell"):
         raise HTTPException(400, "Action must be buy or sell.")
+    # NaN/Infinity parse fine on the wire — reject them (and absurd sizes)
+    # before they reach Decimal, where they'd surface as raw 500s
+    if body.shares is not None and (
+        not math.isfinite(body.shares) or not 0 < body.shares <= 1_000_000_000
+    ):
+        raise HTTPException(400, "Invalid share amount.")
+    if body.dollarsCents is not None and not math.isfinite(body.dollarsCents):
+        raise HTTPException(400, "Invalid dollar amount.")
     t0 = perf_counter()
 
     # Idempotency-Key: a retried POST with the same key returns the original
@@ -502,11 +525,10 @@ async def place_order(
         if row is None:
             raise HTTPException(404, "Market not found.")
         m = row._mapping
-        if m["status"] == "resolved":
-            raise HTTPException(400, f"This market resolved {m['outcome']}. No more trading.")
-        if m["status"] != "open" or m["closes_at"] < datetime.now(timezone.utc):
-            raise HTTPException(400, "This market has closed. Awaiting resolution.")
 
+        # Idempotency replay first — before the status checks. Retries
+        # cluster exactly around market close/resolution, and a replayed
+        # fill must return the stored response, not "market closed".
         replayed = None
         if idem:
             ins = await session.execute(
@@ -529,6 +551,11 @@ async def place_order(
                 replayed = prev.response
         if replayed is not None:
             return replayed
+
+        if m["status"] == "resolved":
+            raise HTTPException(400, f"This market resolved {m['outcome']}. No more trading.")
+        if m["status"] != "open" or m["closes_at"] < datetime.now(UTC):
+            raise HTTPException(400, "This market has closed. Awaiting resolution.")
 
         urow = (
             await session.execute(
@@ -579,14 +606,20 @@ async def place_order(
             ).first()
             pos = prow._mapping if prow else None
             sell_shares = (
-                Decimal(str(body.shares)).quantize(Decimal("1E-10")) if body.shares is not None else Decimal(0)
+                Decimal(str(body.shares)).quantize(Decimal("1E-10"))
+                if body.shares is not None else Decimal(0)
             )
             if pos is None or sell_shares <= 0 or sell_shares > pos["shares"]:
                 raise HTTPException(400, "You do not have that many shares.")
             clamped = min(sell_shares, pos["shares"])
 
             proceeds = proceeds_for_shares(m["q_yes"], m["q_no"], side, clamped)
-            amount_cents = max(1, round(float(proceeds) * 100))
+            amount_cents = round(float(proceeds) * 100)
+            if amount_cents < 1:
+                # paying a guaranteed 1¢ would mint money out of escrow —
+                # dust positions are simply not sellable (resolution eats
+                # them anyway)
+                raise HTTPException(400, "Order too small — proceeds round to less than 1¢.")
             fill_shares = clamped
             fill_price_cents = round(Decimal(amount_cents) / clamped)
 
@@ -653,7 +686,8 @@ async def place_order(
         )).scalar_one()
         pos_rows = (
             await session.execute(
-                text("SELECT side, shares, cost_cents FROM positions WHERE market_id = :m AND user_id = :u"),
+                text("SELECT side, shares, cost_cents FROM positions "
+                     "WHERE market_id = :m AND user_id = :u"),
                 {"m": fresh["id"], "u": user["id"]},
             )
         ).mappings().all()
@@ -722,9 +756,9 @@ async def resolve_market(
         try:
             await request_resolution(m, body.outcome)
         except SettlementUnavailable as err:
-            raise HTTPException(503, str(err))
+            raise HTTPException(503, str(err)) from err
         except (RPCError, OSError) as err:
-            raise HTTPException(503, f"Settlement worker unreachable: {err}")
+            raise HTTPException(503, f"Settlement worker unreachable: {err}") from err
     else:
         from app.market_lifecycle import LifecycleError, settle_market
 
@@ -732,8 +766,8 @@ async def resolve_market(
             await settle_market(m["id"], body.outcome)
         except LifecycleError as err:
             if err.reason == "not_found":
-                raise HTTPException(404, "Market not found.")
-            raise HTTPException(400, "Market is already resolved.")
+                raise HTTPException(404, "Market not found.") from err
+            raise HTTPException(400, "Market is already resolved.") from err
 
     fresh = await load_market(session, " WHERE m.slug = :slug", {"slug": slug})
     return {"market": market_view(fresh)}
@@ -749,5 +783,5 @@ async def health(session: AsyncSession = Depends(get_session)) -> dict:
     try:
         await session.execute(text("SELECT 1"))
         return {"ok": True}
-    except Exception:
-        raise HTTPException(500, "unhealthy")
+    except Exception as err:
+        raise HTTPException(500, "unhealthy") from err

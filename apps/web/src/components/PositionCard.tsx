@@ -1,8 +1,10 @@
 "use client";
 
+import { useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { fmtMoney } from "@/lib/format";
+import { idempotencyKey } from "@/lib/safeUrl";
 import { useAuth } from "@/auth/AuthContext";
 import type { MarketDetail } from "@meridian/contracts";
 
@@ -18,6 +20,10 @@ export default function PositionCard({
 }) {
   const { setBalanceCents } = useAuth();
   const qc = useQueryClient();
+  // a double-click fires two handlers before any re-render — the second
+  // would race the first and lose loudly. One sell at a time, each with
+  // its own idempotency key so retries dedupe server-side.
+  const inFlight = useRef(false);
   const pos = market.yourPosition;
   if (!pos) return null;
 
@@ -27,18 +33,22 @@ export default function PositionCard({
   if (!sides.length) return null;
 
   const sellAll = async (side: "yes" | "no") => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     try {
-      const res = (await api.order(market.slug, {
-        side,
-        action: "sell",
-        shares: pos[side].shares,
-      })) as { fill: { shares: number; amountCents: number }; balanceCents: number };
+      const res = await api.order(
+        market.slug,
+        { side, action: "sell", shares: pos[side].shares },
+        idempotencyKey(),
+      );
       setBalanceCents(res.balanceCents);
       setToast(`Sold ${res.fill.shares} ${side.toUpperCase()} for $${(res.fill.amountCents / 100).toFixed(2)}`);
       qc.invalidateQueries({ queryKey: ["market", market.slug] });
       onDone();
     } catch (err) {
       setToast(err instanceof Error ? err.message : "Request failed", true);
+    } finally {
+      inFlight.current = false;
     }
   };
 

@@ -2,15 +2,16 @@
 claim→publish→mark, and the at-least-once contract (marked rows never
 re-claim; unmarked rows do)."""
 
+import contextlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
 from app.db import engine
 from relay.main import TOPIC_MARKETS, TOPIC_TRADES, build_message, relay_once, topic_for
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 class StubProducer:
@@ -103,10 +104,8 @@ async def test_unmarked_rows_replay(client, alice):
                 raise RuntimeError("relay crashed before marking")  # …marks roll back
 
     async with SessionFactory() as session:
-        try:
+        with contextlib.suppress(RuntimeError):
             await relay_once(CrashBeforeMark(), session)
-        except RuntimeError:
-            pass
     rows = await _outbox_rows()
     assert all(r["published_at"] is None for r in rows)  # nothing marked
 
@@ -119,7 +118,7 @@ def test_build_message_is_json_serializable():
     class Row:
         def __getitem__(self, k):
             return {"id": 7, "event_type": "TradeExecuted", "aggregate": "market:x",
-                    "market_id": 3, "created_at": datetime(2026, 9, 30, 23, 0, 0, tzinfo=timezone.utc),
+                    "market_id": 3, "created_at": datetime(2026, 9, 30, 23, 0, 0, tzinfo=UTC),
                     "payload": {"slug": "x", "priceCents": 50}}[k]
 
     msg = build_message(Row())

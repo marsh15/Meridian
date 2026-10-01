@@ -18,8 +18,10 @@ sys.path.insert(0, str(REPO / "services" / "api"))
 
 from app.amm import price_yes, proceeds_for_shares, shares_for_dollars  # noqa: E402
 
-PRICE_Q_GRID = [-100.0, -10.0, 0.0, 1.5, 10.0, 42.7, 100.0, 250.0, 600.0, 1200.0]
-TRADE_Q_GRID = [0.0, 50.0, 250.0, 800.0]
+# -1323.3 exercises the price extreme where the fill search bracket has
+# to grow past the naive dollars*120 cap (0.5c marginal price)
+PRICE_Q_GRID = [-1323.3, -100.0, -10.0, 0.0, 1.5, 10.0, 42.7, 100.0, 250.0, 600.0, 1200.0]
+TRADE_Q_GRID = [-1323.3, 0.0, 50.0, 250.0, 800.0]
 DOLLARS = [1.0, 5.0, 10.0, 50.0, 123.45, 500.0, 1000.0]
 SHARES = [0.1, 1.0, 2.5, 10.0, 25.1234567891, 100.0]
 

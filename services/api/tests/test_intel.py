@@ -5,7 +5,7 @@ The LLM and retrieval are stubbed here — these tests pin the CONTRACT
 live path against Ollama is verified manually and documented in ADR 0010.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -22,7 +22,7 @@ def _src(title, publisher="Reuters", days_old=1, url=None):
         title=title,
         url=url or f"https://example.com/{abs(hash(title)) % 99999}",
         publisher=publisher,
-        published_at=datetime.now(timezone.utc) - timedelta(days=days_old),
+        published_at=datetime.now(UTC) - timedelta(days=days_old),
         snippet=title.lower(),
     )
 
@@ -220,8 +220,9 @@ async def test_explain_404_on_unknown_market(client, alice):
 
 
 async def test_candles_carry_event_timeline_markers(client, alice):
-    from app.db import engine
     from sqlalchemy import text
+
+    from app.db import engine
 
     r = await client.post("/api/markets", json={
         "question": "Do sharp moves and large trades land on the chart?",

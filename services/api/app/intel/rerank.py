@@ -7,7 +7,7 @@ per-publisher cap stops one outlet from filling the whole context window.
 
 import math
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -44,11 +44,11 @@ def rerank(
     top: int = 6,
     now: datetime | None = None,
 ) -> "list[tuple[float, RawSource]]":
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     q_terms = tokenize(f"{question} {category}")
     d_terms = tokenize(description)
 
-    scored: list[tuple[float, "RawSource"]] = []
+    scored: list[tuple[float, RawSource]] = []
     for src in sources:
         text = f"{src.title} {src.snippet}"
         q_overlap = _overlap_ratio(q_terms, text)
@@ -69,7 +69,7 @@ def rerank(
 
     scored.sort(key=lambda pair: pair[0], reverse=True)
 
-    picked: list[tuple[float, "RawSource"]] = []
+    picked: list[tuple[float, RawSource]] = []
     per_publisher: dict[str, int] = {}
     for score, src in scored:
         if len(picked) >= top:

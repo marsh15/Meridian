@@ -4,13 +4,10 @@ broker. The fail-open contract (no Redis → everything allows/misses) is
 covered implicitly by every other test file, which runs with REDIS_URL=''.
 """
 
-import asyncio
 
-import pytest
 from sqlalchemy import text
 
 from app.config import settings
-
 
 # ------------------------------- rate limits --------------------------------
 

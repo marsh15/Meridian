@@ -4,7 +4,7 @@ so tests can drive single cycles with a stub producer."""
 import asyncio
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from time import monotonic
 from typing import Any, Protocol
 
@@ -115,16 +115,29 @@ class Producer(Protocol):
 
 async def relay_once(producer: Producer, session: AsyncSession) -> int:
     """One cycle: claim unpublished rows, publish each in outbox-id order,
-    mark them published, commit. Returns the number of events published."""
+    mark them published, commit. Returns the number of events published.
+    Unroutable event types are quarantined to the DLQ and marked — left in
+    the outbox they would sit at the head of the claim order forever and
+    wedge every batch behind them."""
     published = 0
     async with session.begin():
         rows = await claim_batch(session)
         for row in rows:
             topic = topic_for(row["event_type"])
             if topic is None:
-                # Unknown type: leave unpublished (outbox lag makes this
-                # visible) rather than dropping or misrouting it.
-                log.error("no topic routed for event_type=%s id=%s", row["event_type"], row["id"])
+                log.error("no topic routed for event_type=%s id=%s — quarantining to DLQ",
+                          row["event_type"], row["id"])
+                await producer.send_and_wait(
+                    topic="exchange.dlq",
+                    key=message_key(row).encode(),
+                    value=json.dumps({
+                        "unroutedEvent": True,
+                        "event_type": row["event_type"],
+                        "outboxId": row["id"],
+                        "aggregate": row["aggregate"],
+                        "payload": row["payload"],
+                    }, default=str).encode(),
+                )
                 continue
             await producer.send_and_wait(
                 topic=topic,
@@ -132,36 +145,60 @@ async def relay_once(producer: Producer, session: AsyncSession) -> int:
                 value=json.dumps(build_message(row), separators=(",", ":")).encode(),
             )
             published += 1
-        if published:
-            ids = [row["id"] for row in rows if topic_for(row["event_type"]) is not None]
+        if rows:
             await session.execute(
                 text("UPDATE outbox_events SET published_at = :now WHERE id = ANY(:ids)"),
-                {"now": datetime.now(timezone.utc), "ids": ids},
+                {"now": datetime.now(UTC), "ids": [row["id"] for row in rows]},
             )
     return published
 
 
 async def main() -> None:
     setup_telemetry(service_name="meridian-relay")
+    # Per-market ordering is only guaranteed with ONE relay publishing:
+    # SKIP LOCKED lets a second instance claim the next batch while the
+    # first is still publishing, so a market spanning both batches can see
+    # its events land out of order. The advisory lock is the lease that
+    # keeps a single leader; a crashed relay's session releases it.
+    import asyncpg
+
+    lease = await asyncpg.connect(settings.asyncpg_dsn)
+    leader = await lease.fetchval("SELECT pg_try_advisory_lock($1)", 742391)
+    if not leader:
+        log.error("another relay holds the leadership lease (pg advisory lock 742391) — "
+                  "per-market ordering requires exactly one relay; exiting")
+        return
     producer = AIOKafkaProducer(
         bootstrap_servers=settings.kafka_bootstrap_servers,
         acks="all",  # a marked row is guaranteed replicated by the broker
+        enable_idempotence=True,  # broker retries can't duplicate a send
         linger_ms=5,
     )
     await producer.start()
     log.info("relay started → %s", settings.kafka_bootstrap_servers)
     total = 0
     last_lag = 0.0
+    backoff = 1.0
     try:
         while True:
-            async with SessionFactory() as session:
-                n = await relay_once(producer, session)
-            total += n
-            if monotonic() - last_lag >= LAG_INTERVAL:
-                await measure_lag()
-                last_lag = monotonic()
-            if n == 0:
-                await asyncio.sleep(IDLE_SLEEP)
+            try:
+                async with SessionFactory() as session:
+                    n = await relay_once(producer, session)
+                total += n
+                backoff = 1.0
+                if monotonic() - last_lag >= LAG_INTERVAL:
+                    await measure_lag()
+                    last_lag = monotonic()
+                if n == 0:
+                    await asyncio.sleep(IDLE_SLEEP)
+            except Exception:
+                # crash-only was the old story; now a Kafka/DB blip backs
+                # off and retries instead of taking the relay down (the
+                # outbox keeps every unclaimed event safe either way)
+                log.exception("relay cycle failed; retrying in %.0fs", backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 30.0)
     finally:
         await producer.stop()
+        await lease.close()
         log.info("relay stopped after publishing %d events", total)

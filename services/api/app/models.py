@@ -1,7 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, Numeric, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -31,6 +31,13 @@ class SessionToken(Base):
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    # server-side counterpart of the cookie's max-age: an exfiltrated token
+    # stops working when it expires, not never
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=text("now() + interval '30 days'"),
+        nullable=False,
     )
 
 

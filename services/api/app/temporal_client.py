@@ -20,13 +20,24 @@ from worker.workflows import MarketLifecycleInput, MarketLifecycleWorkflow, work
 
 CONFIRM_TIMEOUT_S = 5.0
 
+# one gRPC channel for the process, built lazily and reused — a fresh
+# Client.connect per resolve request churns channels under any real traffic
+_client: Client | None = None
+
+
+async def _get_client() -> Client:
+    global _client
+    if _client is None:
+        _client = await Client.connect(settings.temporal_address)
+    return _client
+
 
 class SettlementUnavailable(RuntimeError):
     """The worker did not confirm settlement in time."""
 
 
 async def request_resolution(market: dict, outcome: str) -> None:
-    client = await Client.connect(settings.temporal_address)
+    client = await _get_client()
     wid = workflow_id(market["id"])
     try:
         handle = await client.start_workflow(
@@ -34,7 +45,8 @@ async def request_resolution(market: dict, outcome: str) -> None:
             MarketLifecycleInput(market["id"], market["slug"], market["closes_at"].timestamp()),
             id=wid,
             task_queue=settings.temporal_task_queue,
-            id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+            # failed prior runs are replaceable; running/succeeded are not
+            id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
         )
     except WorkflowAlreadyStartedError:
         handle = client.get_workflow_handle(wid)

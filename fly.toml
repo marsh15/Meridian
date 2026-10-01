@@ -12,6 +12,9 @@ primary_region = "iad"
   # single-machine profile: no Temporal/Kafka; settlement runs in-request
   SETTLEMENT_MODE = "inline"
   COOKIE_SECURE = "true"
+  # Fly's proxy sets Fly-Client-IP on every request — trust it (and the
+  # XFF chain) for rate limiting
+  TRUST_PROXY_HEADERS = "true"
   # run without Redis (rate limits/cache/fan-out fail open). Point REDIS_URL
   # at e.g. Upstash to switch them on:
   # REDIS_URL = "rediss://..."
@@ -28,6 +31,15 @@ primary_region = "iad"
     type = "requests"
     soft_limit = 200
     hard_limit = 250
+
+# an HTTP check, not just a TCP connect: it goes through the Next server's
+# /api/* rewrite to the API loopback, so a wedged half fails the check
+[[checks]]
+  port = 3000
+  http_path = "/api/health"
+  interval = "10s"
+  timeout = "3s"
+  grace_period = "30s"
 
 # release phase runs in the newly built image before traffic shifts:
 # migrations apply with the same code that will serve them (alembic.ini

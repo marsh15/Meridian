@@ -74,13 +74,14 @@ export default function PortfolioPage() {
   const [netFlash, setNetFlash] = useState<"up" | "down" | null>(null);
   const prevNet = useRef<number | null>(null);
   useEffect(() => {
+    if (!data) return; // don't prime the tracker with the skeleton's 0
     const prev = prevNet.current;
     prevNet.current = netWorth;
     if (prev == null || prev === netWorth) return;
     setNetFlash(netWorth > prev ? "up" : "down");
     const t = setTimeout(() => setNetFlash(null), 1200);
     return () => clearTimeout(t);
-  }, [netWorth]);
+  }, [netWorth, data]);
 
   /* auth gate — the terminal is meaningless without a book */
   if (ready && !user) {

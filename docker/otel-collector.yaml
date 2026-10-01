@@ -1,5 +1,5 @@
 # OTLP entrypoint for every meridian process (api, relay, consumers —
-# OTLP_ENDPOINT=http://localhost:4318). Metrics are re-exposed as a
+# OTLP_ENDPOINT=http://localhost:4319; compose maps host 4319 → 4318). Metrics are re-exposed as a
 # Prometheus scrape target on :8889; traces are forwarded to Tempo.
 receivers:
   otlp:

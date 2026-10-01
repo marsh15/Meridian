@@ -1,6 +1,9 @@
 packages:
   - "apps/*"
   - "packages/*"
+# supply-chain policy: a package must be published at least this long
+# before pnpm will resolve to it (lockfile installs unaffected)
+minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@vitest/mocker@5.0.3"
   - "@vitest/spy@5.0.3"

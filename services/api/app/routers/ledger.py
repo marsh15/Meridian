@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.amm import price_yes
 from app.db import get_session
-from app.deps import current_user, require_user
+from app.deps import require_user
 from app.ledger import reconcile
 
 router = APIRouter(prefix="/api")
@@ -20,9 +20,14 @@ USER_CASH_SUM = (
 
 
 @router.get("/ledger/reconcile")
-async def get_reconcile(session: AsyncSession = Depends(get_session)) -> dict:
-    """The audit proof: every transaction balanced, Σ debits == Σ credits,
-    and users.balance_cents equal to the user_cash ledger balance."""
+async def get_reconcile(
+    user: dict = Depends(require_user),
+    session: AsyncSession = Depends(get_session),
+) -> dict:
+    """The audit proof, for signed-in users: every transaction balanced,
+    Σ debits == Σ credits, and users.balance_cents equal to the user_cash
+    ledger balance. (Unauthenticated: it's three full-table aggregations —
+    not something to hand an anonymous hammer.)"""
     return await reconcile(session)
 
 

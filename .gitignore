@@ -21,6 +21,10 @@ dist/
 .env.*
 !.env.example
 
+# test artifacts (playwright)
+test-results/
+playwright-report/
+
 # misc
 .DS_Store
 *.log

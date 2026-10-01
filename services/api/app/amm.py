@@ -17,11 +17,11 @@ B = 250.0
 TEN_PLACES = Decimal("0.0000000001")
 
 
-def q(value: Decimal | float | int) -> Decimal:
+def q(value: Decimal | float) -> Decimal:
     return Decimal(value).quantize(TEN_PLACES, rounding=ROUND_DOWN)  # type: ignore[arg-type]
 
 
-def _f(value: Decimal | float | int) -> float:
+def _f(value: Decimal | float) -> float:
     return float(value)
 
 
@@ -32,8 +32,13 @@ def cost(q_yes: Decimal | float, q_no: Decimal | float) -> float:
 
 
 def price_yes(q_yes: Decimal | float, q_no: Decimal | float) -> float:
-    """YES price in (0, 1)."""
-    return 1.0 / (1.0 + math.exp((_f(q_no) - _f(q_yes)) / B))
+    """YES price in (0, 1). Softmax form: subtracting the max keeps both
+    exp() arguments ≤ 0, so extreme quantity gaps saturate toward 0/1
+    instead of overflowing."""
+    a, b = _f(q_yes) / B, _f(q_no) / B
+    m = max(a, b)
+    e = math.exp(a - m)
+    return e / (e + math.exp(b - m))
 
 
 def opening_q(initial_yes_cents: int) -> tuple[Decimal, Decimal]:
@@ -48,12 +53,21 @@ def shares_for_dollars(
 ) -> Decimal:
     """Shares bought for exactly `dollars` on one side (binary search on the
     monotonic cost curve)."""
+
+    def spent(shares: float) -> float:
+        c = cost(_f(q_yes) + shares, q_no) if side == "yes" else cost(q_yes, _f(q_no) + shares)
+        return c - c0
+
     c0 = cost(q_yes, q_no)
     lo, hi = 0.0, max(dollars * 120, 1.0)
+    # a marginal price under ~0.83¢ makes the true fill exceed the naive
+    # dollars*120 bracket — grow it until the bracket actually contains the
+    # root, or the search silently returns the cap and overcharges
+    while spent(hi) < dollars:
+        hi *= 2.0
     for _ in range(80):
         mid = (lo + hi) / 2
-        c = cost(_f(q_yes) + mid, q_no) if side == "yes" else cost(q_yes, _f(q_no) + mid)
-        if c - c0 < dollars:
+        if spent(mid) < dollars:
             lo = mid
         else:
             hi = mid

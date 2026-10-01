@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import logging
 
 from sqlalchemy import text
@@ -33,9 +34,10 @@ async def connect() -> Client:
 
 async def starter(client: Client) -> None:
     """Launch a lifecycle workflow for every live market that lacks one.
-    Markets.workflow_started_at is the marker; REJECT_DUPLICATE + the
-    deterministic id make starts idempotent, so restarts and races are
-    harmless. Covers markets created before the worker existed."""
+    Markets.workflow_started_at is the marker; the deterministic id +
+    ALLOW_DUPLICATE_FAILED_ONLY make starts idempotent (running/succeeded
+    ids refuse duplication) while a failed run can be replaced. Covers
+    markets created before the worker existed."""
     while True:
         try:
             rows = []
@@ -52,17 +54,19 @@ async def starter(client: Client) -> None:
                         MarketLifecycleInput(m["id"], m["slug"], m["closes_at"].timestamp()),
                         id=workflow_id(m["id"]),
                         task_queue=settings.temporal_task_queue,
-                        id_reuse_policy=WorkflowIDReusePolicy.REJECT_DUPLICATE,
+                        # a failed prior run may be replaced (retry-budget
+                        # exhaustion, bug) so the market isn't stuck closed;
+                        # running/succeeded ids still refuse to duplicate
+                        id_reuse_policy=WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY,
                     )
                     log.info("started %s (%s)", workflow_id(m["id"]), m["slug"])
                 except WorkflowAlreadyStartedError:
                     pass  # already running — fine
-                async with SessionFactory() as session:
-                    async with session.begin():
-                        await session.execute(
-                            text("UPDATE markets SET workflow_started_at = now() WHERE id = :id"),
-                            {"id": m["id"]},
-                        )
+                async with SessionFactory() as session, session.begin():
+                    await session.execute(
+                        text("UPDATE markets SET workflow_started_at = now() WHERE id = :id"),
+                        {"id": m["id"]},
+                    )
         except Exception:
             log.exception("starter scan failed")
         await asyncio.sleep(STARTER_INTERVAL_S)
@@ -80,7 +84,5 @@ async def main() -> None:
     await asyncio.gather(worker.run(), starter(client))
 
 
-try:
+with contextlib.suppress(KeyboardInterrupt):
     asyncio.run(main())
-except KeyboardInterrupt:
-    pass

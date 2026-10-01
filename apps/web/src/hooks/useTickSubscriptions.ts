@@ -1,12 +1,13 @@
 "use client";
 
-/* Portfolio terminal live P&L (global SSE tap).
-   One EventSource on /api/stream for the whole page; ticks for slugs the
-   viewer doesn't hold are dropped before they ever reach state. Prices are
-   patched locally — the portfolio query is never refetched per tick. */
+/* Portfolio terminal live P&L (global SSE tap, shared connection).
+   Ticks for slugs the viewer doesn't hold are dropped before they ever
+   reach state. Prices are patched locally — the portfolio query is never
+   refetched per tick. */
 
 import { useEffect, useRef, useState } from "react";
 import { TickSchema } from "@meridian/contracts";
+import { subscribeStream } from "@/lib/sse";
 
 export interface LiveTick {
   price: number; // yes price, in cents
@@ -29,7 +30,6 @@ export function useTickSubscriptions(slugs: readonly string[] | null) {
 
   useEffect(() => {
     if (!enabled) return;
-    const es = new EventSource("/api/stream");
     const listener = (e: Event) => {
       let raw: unknown;
       try {
@@ -55,11 +55,7 @@ export function useTickSubscriptions(slugs: readonly string[] | null) {
         };
       });
     };
-    es.addEventListener("tick", listener);
-    return () => {
-      es.removeEventListener("tick", listener);
-      es.close();
-    };
+    return subscribeStream("/api/stream", listener);
   }, [enabled]);
 
   return ticks;

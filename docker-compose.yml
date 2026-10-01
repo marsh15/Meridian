@@ -8,8 +8,11 @@ services:
       POSTGRES_PASSWORD: meridian
       POSTGRES_DB: meridian
     ports:
-      # host 5434 — 5432 and 5433 are both taken by a local Postgres
-      - "5434:5432"
+      # host 5434 — 5432 and 5433 are both taken by a local Postgres.
+      # Loopback-only: a dev stack must not expose Postgres (or anything
+      # else here) to the LAN — Grafana runs anonymous-Admin, stores have
+      # dev passwords
+      - "127.0.0.1:5434:5432"
     volumes:
       - meridian-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -42,7 +45,7 @@ services:
       # topics come from scripts/provision-topics.sh, never auto-creation
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     ports:
-      - "9092:9092"
+      - "127.0.0.1:9092:9092"
     volumes:
       - meridian-kafkadata:/var/lib/kafka/data
     healthcheck:
@@ -90,7 +93,7 @@ services:
       BIND_ON_IP: 0.0.0.0
       DYNAMIC_CONFIG_FILE_PATH: /etc/temporal/config/dynamicconfig/docker.yaml
     ports:
-      - "7233:7233"
+      - "127.0.0.1:7233:7233"
     volumes:
       - ./docker/temporal-dynamicconfig.yaml:/etc/temporal/config/dynamicconfig/docker.yaml:ro
     healthcheck:
@@ -111,7 +114,7 @@ services:
     command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       # host 6399 — 6379 is commonly taken by a local Redis
-      - "6399:6379"
+      - "127.0.0.1:6399:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -132,7 +135,7 @@ services:
       - ./docker/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     ports:
       # host 4319 — something in Docker Desktop's backend already squats 4318
-      - "4319:4318"
+      - "127.0.0.1:4319:4318"
 
   prometheus:
     image: prom/prometheus:v3.1.0
@@ -141,7 +144,7 @@ services:
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9091:9090"
+      - "127.0.0.1:9091:9090"
 
   tempo:
     # trace storage on a throwaway volume — dev-only, no object store
@@ -155,8 +158,7 @@ services:
     volumes:
       - ./docker/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - meridian-tempodata:/tmp/tempo
-    ports:
-      - "3200:3200"
+    ports: []  # tempo is reached inside the compose network (grafana → tempo:3200)
 
   grafana:
     image: grafana/grafana:11.5.0
@@ -171,7 +173,7 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3002:3000"
+      - "127.0.0.1:3002:3000"
 
   temporal-ui:
     # optional: `docker compose --profile ui up` → http://localhost:8081
@@ -184,7 +186,7 @@ services:
     environment:
       TEMPORAL_ADDRESS: localhost:7233
     ports:
-      - "8081:8080"
+      - "127.0.0.1:8081:8080"
 
 volumes:
   meridian-pgdata:

@@ -118,7 +118,8 @@ docs/              ADRs + ROADMAP + failure model
 - **Idempotent orders** — clients send an `Idempotency-Key` header; the
   `(user, key)` row is written in the trade's own transaction with a hash of
   the request and the exact response body, so a replayed or racing duplicate
-  returns the original fill instead of trading again (tested).
+  returns the original fill instead of trading again — including a retry
+  that lands after the market closed (tested).
 - **Market lifecycle** — durable execution on Temporal ([ADR 0008](docs/adr/0008-temporal-lifecycle.md)):
   a workflow timer closes each market at `closes_at`, the workflow waits
   crash-safely for the creator's resolution signal, and settlement
@@ -128,12 +129,15 @@ docs/              ADRs + ROADMAP + failure model
   its own transaction ([ADR 0007](docs/adr/0007-double-entry-ledger.md));
   a deferred constraint trigger makes the database refuse an unbalanced
   journal, `users.balance_cents` is a projection proven equal by
-  `GET /api/ledger/reconcile`, and the leaderboard and portfolio read
-  from the journal.
+  `GET /api/ledger/reconcile` (any signed-in trader can run the proof),
+  and the leaderboard and portfolio read from the journal. Resolution
+  drains a settled market's escrow to exactly zero — truncation dust and
+  unsold losing-side inventory return to the system account.
 - **Read models** — trades and price history paginate by keyset
   (`?limit&before_id`), so live inserts can't skew a page walk.
-- **Redis, fail-open** — fixed-window rate limits (auth/orders/creates,
-  429 + `Retry-After`), a 2-second hot cache on the markets list (purged
+- **Redis, fail-open** — fixed-window rate limits (auth/orders/creates/
+  resets, 429 + `Retry-After`; proxy headers only trusted behind
+  `TRUST_PROXY_HEADERS`), a 2-second hot cache on the markets list (purged
   by content-changing writes so a client never sees a list that predates
   its own write), and the SSE fan-out above. Redis down or unset means the
   limiter allows, the cache misses, and the stream falls back — the API

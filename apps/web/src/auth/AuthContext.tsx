@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import type { User } from "@meridian/contracts";
 
@@ -34,6 +35,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
   const [modal, setModal] = useState<AuthMode | null>(null);
+  const qc = useQueryClient();
+
+  /* Cached queries embed the viewer's identity (yourPosition, isCreator,
+     portfolio). Without this, signing out and back in as someone else
+     flashes the previous account's data from cache — so auth transitions
+     drop or refetch everything identity-dependent. */
+  const refetchIdentityData = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["market"] });
+    qc.invalidateQueries({ queryKey: ["markets"] });
+  }, [qc]);
 
   useEffect(() => {
     api
@@ -46,27 +57,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const openAuth = useCallback((mode: AuthMode = "login") => setModal(mode), []);
   const closeAuth = useCallback(() => setModal(null), []);
 
-  const login = useCallback(async (body: object) => {
-    const { user } = await api.login(body);
-    setUser(user);
-    setModal(null);
-  }, []);
+  const login = useCallback(
+    async (body: object) => {
+      const { user } = await api.login(body);
+      setUser(user);
+      setModal(null);
+      refetchIdentityData();
+    },
+    [refetchIdentityData],
+  );
 
-  const signup = useCallback(async (body: object) => {
-    const { user } = await api.signup(body);
-    setUser(user);
-    setModal(null);
-  }, []);
+  const signup = useCallback(
+    async (body: object) => {
+      const { user } = await api.signup(body);
+      setUser(user);
+      setModal(null);
+      refetchIdentityData();
+    },
+    [refetchIdentityData],
+  );
 
   const logout = useCallback(async () => {
     await api.logout();
     setUser(null);
-  }, []);
+    // the next viewer must never see this one's portfolio from cache
+    qc.removeQueries({ queryKey: ["portfolio"] });
+    qc.removeQueries({ queryKey: ["market"] });
+    qc.removeQueries({ queryKey: ["markets"] });
+  }, [qc]);
 
   const resetAccount = useCallback(async () => {
     const { user } = await api.resetAccount();
     setUser(user);
-  }, []);
+    // the book was sold back server-side; the cached positions are fiction
+    qc.invalidateQueries({ queryKey: ["portfolio"] });
+    refetchIdentityData();
+  }, [qc, refetchIdentityData]);
 
   /* fills and settlements change the balance server-side; sync it without
      refetching the whole session */

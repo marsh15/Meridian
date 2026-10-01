@@ -5,7 +5,7 @@ the signal, payouts into the ledger — without a deployed Temporal."""
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -16,7 +16,7 @@ from app.db import engine
 from worker import activities
 from worker.workflows import MarketLifecycleInput, MarketLifecycleWorkflow, workflow_id
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 @pytest.fixture(scope="module")
@@ -78,7 +78,7 @@ async def test_timer_closes_then_signal_settles(client, alice, env):
 
         # virtual time jumps straight past closes_at; the close activity
         # still runs for real against the database
-        await env.sleep(closes_ts - datetime.now(timezone.utc).timestamp() + 5)
+        await env.sleep(closes_ts - datetime.now(UTC).timestamp() + 5)
         await _wait_status(mid, "closed")
 
         await handle.signal(MarketLifecycleWorkflow.resolve, "yes")

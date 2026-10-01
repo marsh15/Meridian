@@ -318,6 +318,12 @@ button {
   animation: pulse 2s ease-in-out infinite;
 }
 
+/* stream reconnecting — prices may be stale for a moment */
+.live-dot.off {
+  background: var(--down);
+  animation: none;
+}
+
 @keyframes pulse {
   0%,
   100% {

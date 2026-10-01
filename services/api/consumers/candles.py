@@ -43,6 +43,16 @@ async def handle(session: AsyncSession, ev: Event) -> None:
         return
     etype, payload = ev["type"], ev["payload"]
     if etype == "TradeExecuted":
+        # Trade and resolve events ride different topics, so Kafka can
+        # deliver a pre-resolution trade AFTER MarketResolved; the
+        # settlement candle is final and a late trade must not overwrite
+        # its close. (Trades can't happen after resolution — the API
+        # refuses them.)
+        status = (await session.execute(
+            text("SELECT status FROM markets WHERE id = :m"), {"m": ev["marketId"]}
+        )).scalar_one_or_none()
+        if status == "resolved":
+            return
         await _upsert_candle(
             session, ev["marketId"], _minute(ev["occurredAt"]),
             int(payload["priceCents"]), int(payload["amountCents"]), 1,

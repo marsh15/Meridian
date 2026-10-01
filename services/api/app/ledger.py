@@ -175,6 +175,21 @@ async def post_burn(session: AsyncSession, user_id: int, amount_cents: int, memo
     ])
 
 
+async def post_escrow_burn(
+    session: AsyncSession, market_id: int, amount_cents: int, memo: str
+) -> None:
+    """Terminal drain of a resolved market's escrow: sub-cent truncation
+    across payouts and unsold losing-side inventory return to the system
+    account, so the market's escrow ends at exactly zero."""
+    if amount_cents <= 0:
+        return
+    await post_entries(session, new_transaction_id(), [
+        Entry(KIND_SYSTEM, "debit", amount_cents, ref_type="burn", memo=memo),
+        Entry(KIND_MARKET_ESCROW, "credit", amount_cents,
+              market_id=market_id, ref_type="burn", memo=memo),
+    ])
+
+
 async def post_trade(
     session: AsyncSession, *, user_id: int, market_id: int, amount_cents: int,
     cash: Literal["out", "in"], trade_id: int,

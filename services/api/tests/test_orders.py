@@ -3,13 +3,13 @@ and the outbox/notify side effects. Runs against a real Postgres."""
 
 import asyncio
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 
 from app.config import settings
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 async def _create_market(client, question="Will the test suite pass by October 2026?", yes=50):

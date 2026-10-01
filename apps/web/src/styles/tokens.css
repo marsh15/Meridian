@@ -9,7 +9,7 @@
   --surface-2: #f2edde;
   --ink: #191512;
   --ink-soft: #4c4438;
-  --muted: #8b8070;
+  --muted: #6f6553; /* AA contrast on --bg for 11px uppercase labels */
   --accent: #2747c4;
   --accent-2: #8a6d1d;
   --accent-ink: #ffffff;

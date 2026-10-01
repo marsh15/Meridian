@@ -7,7 +7,7 @@ error: 503 when no LLM is configured, 502 when the model misbehaves.
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.params import Query
@@ -26,7 +26,7 @@ router = APIRouter(prefix="/api")
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 async def _market_or_404(session: AsyncSession, slug: str):

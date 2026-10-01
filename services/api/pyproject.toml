@@ -43,3 +43,29 @@ pythonpath = ["."]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "PERF", "RUF", "SIM"]
+ignore = [
+    # the fail-open design (docs/failure-model.md, ADR 0009) swallows
+    # Redis/stream/network errors on purpose — the API stays correct
+    # without those dependencies
+    "BLE001",
+    "S110",
+    "S112",
+    # cents signs, arrows, and × in comments/strings are deliberate
+    "RUF001",
+    "RUF002",
+    "RUF003",
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]  # assert False in tests is fine
+# conftest sets env vars before importing the app on purpose
+"tests/conftest.py" = ["E402"]
+# the seed file is data: long question/description strings don't rewrap
+"app/seed.py" = ["E501"]

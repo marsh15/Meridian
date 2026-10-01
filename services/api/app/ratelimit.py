@@ -11,18 +11,22 @@ import time
 
 from fastapi import Depends, HTTPException, Request
 
-from app import metrics, redis as redis_mod
+from app import metrics
+from app import redis as redis_mod
 from app.config import settings
 from app.deps import require_user
 
 
 def _client_ip(request: Request) -> str:
-    # Behind Fly's proxy the socket peer is the proxy itself; the real
-    # client IP arrives in Fly-Client-IP (or the X-Forwarded-For chain).
-    if fly := request.headers.get("fly-client-ip"):
-        return fly.strip()
-    if xff := request.headers.get("x-forwarded-for"):
-        return xff.split(",")[0].strip()
+    # Proxy headers are only honest when every request passes through a
+    # proxy we control that sets/overwrites them (Fly does). Gated by
+    # TRUST_PROXY_HEADERS — otherwise the socket peer is the only address a
+    # client can't spoof per request.
+    if settings.trust_proxy_headers:
+        if fly := request.headers.get("fly-client-ip"):
+            return fly.strip()
+        if xff := request.headers.get("x-forwarded-for"):
+            return xff.split(",")[0].strip()
     return request.client.host if request.client else "unknown"
 
 
@@ -34,9 +38,10 @@ async def _enforce(scope: str, key: str, limit: int, window: int) -> None:
     slug = int(now // window)
     redis_key = f"rl:{scope}:{key}:{slug}"
     try:
-        count = await r.incr(redis_key)
-        if count == 1:
-            await r.expire(redis_key, window + 1)
+        # SET NX carries the TTL atomically with the counter's creation —
+        # a crash between INCR and EXPIRE can never leave a timeless key
+        created = await r.set(redis_key, 1, ex=window + 1, nx=True)
+        count = 1 if created else await r.incr(redis_key)
     except Exception:
         return
     if count > limit:
@@ -63,6 +68,12 @@ async def order_limit(user: dict = Depends(require_user)) -> dict:
 
 async def create_market_limit(user: dict = Depends(require_user)) -> dict:
     await _enforce("creates", f"u{user['id']}", settings.market_creates_per_hour, 3600)
+    return user
+
+
+async def reset_limit(user: dict = Depends(require_user)) -> dict:
+    """Account reset: sells back positions and mints the difference."""
+    await _enforce("reset", f"u{user['id']}", settings.account_resets_per_hour, 3600)
     return user
 
 

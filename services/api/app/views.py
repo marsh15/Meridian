@@ -46,8 +46,10 @@ def market_view(m: Any, **extras: Any) -> dict:
         "category": m["category"],
         "description": m["description"],
         "resolution": m["resolution_rules"],
-        "closesAt": m["closes_at"].isoformat() if hasattr(m["closes_at"], "isoformat") else m["closes_at"],
-        "createdAt": m["created_at"].isoformat() if hasattr(m["created_at"], "isoformat") else m["created_at"],
+        "closesAt": (m["closes_at"].isoformat()
+                     if hasattr(m["closes_at"], "isoformat") else m["closes_at"]),
+        "createdAt": (m["created_at"].isoformat()
+                      if hasattr(m["created_at"], "isoformat") else m["created_at"]),
         "price": price,
         "change24h": change,
         "status": m["status"],

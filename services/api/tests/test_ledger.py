@@ -3,7 +3,7 @@ entries, the database refuses unbalanced journals, users.balance_cents
 tracks the user_cash account exactly, and the reconciliation endpoint
 proves all of it. Leaderboard and portfolio read from the journal."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -13,14 +13,14 @@ from app.ledger import (
     KIND_MARKET_ESCROW,
     KIND_SYSTEM,
     KIND_USER_CASH,
+    Entry,
     account_id,
     post_burn,
     post_entries,
     post_mint,
-    Entry,
 )
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 async def _create_market(client, yes=50, question="Will the ledger tests pass by October 2026?"):
@@ -122,20 +122,24 @@ async def test_resolution_payouts_post_and_reconcile(client, alice, bob, user_cl
             {"m": mid},
         )).scalars().all()
     assert len(payout_rows) == 1  # only the YES holder was paid
-    assert await _ledger_balance(KIND_MARKET_ESCROW, market_id=mid) == 20_000 - sum(payout_rows)
+    # sub-cent truncation and unsold losing-side inventory drain to the
+    # system account — a resolved market's escrow ends at exactly zero
+    drain = 20_000 - sum(payout_rows)
+    assert await _ledger_balance(KIND_MARKET_ESCROW, market_id=mid) == 0
+    # system carries -200k from the two signup mints plus the drain
+    assert await _ledger_balance(KIND_SYSTEM) == -200_000 + drain
 
 
 async def test_database_rejects_unbalanced_journal(client, alice):
     from app.db import SessionFactory
 
     # app-level guard fires synchronously at the call site
-    async with SessionFactory() as session:
-        async with session.begin():
-            with pytest.raises(ValueError, match="unbalanced"):
-                await post_entries(session, "app-level", [
-                    Entry(KIND_SYSTEM, "debit", 100, ref_type="test"),
-                    Entry(KIND_USER_CASH, "credit", 99, user_id=alice["id"], ref_type="test"),
-                ])
+    async with SessionFactory() as session, session.begin():
+        with pytest.raises(ValueError, match="unbalanced"):
+            await post_entries(session, "app-level", [
+                Entry(KIND_SYSTEM, "debit", 100, ref_type="test"),
+                Entry(KIND_USER_CASH, "credit", 99, user_id=alice["id"], ref_type="test"),
+            ])
 
     # the deferred constraint trigger is the database-level backstop: the
     # journal refuses to commit a transaction whose legs do not sum
@@ -211,9 +215,8 @@ async def test_leaderboard_and_portfolio_read_the_journal(client, alice, bob, us
 async def test_post_mint_and_burn_helpers(client, alice):
     from app.db import SessionFactory
 
-    async with SessionFactory() as session:
-        async with session.begin():
-            await post_mint(session, alice["id"], 500, "test mint")
-            await post_burn(session, alice["id"], 200, "test burn")
+    async with SessionFactory() as session, session.begin():
+        await post_mint(session, alice["id"], 500, "test mint")
+        await post_burn(session, alice["id"], 200, "test burn")
     assert await _ledger_balance(KIND_USER_CASH, user_id=alice["id"]) == 100_300
     assert await _ledger_balance(KIND_SYSTEM) == -100_300  # system absorbs the mint

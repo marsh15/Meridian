@@ -39,35 +39,34 @@ async def _load_view(session: AsyncSession, market_id: int) -> Any | None:
 async def close_market(market_id: int) -> bool:
     """open → closed ('awaiting resolution'): event + SSE tick, once.
     Returns True if this call performed the transition."""
-    async with SessionFactory() as session:
-        async with session.begin():
-            row = (
-                await session.execute(
-                    text("SELECT id, slug, q_yes, q_no, status FROM markets "
-                         "WHERE id = :id FOR UPDATE"),
-                    {"id": market_id},
-                )
-            ).first()
-            if row is None or row.status != "open":
-                return False
-            seq = (
-                await session.execute(
-                    text("UPDATE markets SET status = 'closed', "
-                         "event_seq = event_seq + 1 WHERE id = :id RETURNING event_seq"),
-                    {"id": market_id},
-                )
-            ).scalar_one()
-            await record_event(
-                session,
-                aggregate=f"market:{row.slug}",
-                event_type="MarketClosed",
-                payload={"slug": row.slug, "seq": seq},
-                notify={
-                    "type": "tick", "slug": row.slug, "seq": seq,
-                    "price": round(price_yes(row.q_yes, row.q_no) * 100),
-                    "status": "closed", "outcome": None,
-                },
+    async with SessionFactory() as session, session.begin():
+        row = (
+            await session.execute(
+                text("SELECT id, slug, q_yes, q_no, status FROM markets "
+                     "WHERE id = :id FOR UPDATE"),
+                {"id": market_id},
             )
+        ).first()
+        if row is None or row.status != "open":
+            return False
+        seq = (
+            await session.execute(
+                text("UPDATE markets SET status = 'closed', "
+                     "event_seq = event_seq + 1 WHERE id = :id RETURNING event_seq"),
+                {"id": market_id},
+            )
+        ).scalar_one()
+        await record_event(
+            session,
+            aggregate=f"market:{row.slug}",
+            event_type="MarketClosed",
+            payload={"slug": row.slug, "seq": seq},
+            notify={
+                "type": "tick", "slug": row.slug, "seq": seq,
+                "price": round(price_yes(row.q_yes, row.q_no) * 100),
+                "status": "closed", "outcome": None,
+            },
+        )
     # list rows show status — drop the cached payload (fail-open: without
     # Redis there is nothing to drop and the 2s TTL bounds staleness)
     await invalidate_markets_cache()
@@ -77,8 +76,11 @@ async def close_market(market_id: int) -> bool:
 async def settle_market(market_id: int, outcome: str) -> dict[str, Any]:
     """Resolution → settlement → payout → notify, in one transaction:
     winners are paid $1/share, the book is cleared, the final price is
-    written, ledger payouts post, and the MarketResolved event lands in
-    the outbox with its SSE tick. Returns the fresh market view."""
+    written, ledger payouts post, the market's residual escrow drains to
+    the system account, and the MarketResolved event lands in the outbox
+    with its SSE tick. Returns the fresh market view. Replaying with the
+    same outcome returns the current view (Temporal activities may retry
+    after a lost response); a different outcome is an error."""
     async with SessionFactory() as session:
         async with session.begin():
             row = (
@@ -91,7 +93,11 @@ async def settle_market(market_id: int, outcome: str) -> dict[str, Any]:
                 raise LifecycleError("not_found")
             m = row._mapping
             if m["status"] == "resolved":
-                raise LifecycleError("already_resolved")
+                if m["outcome"] != outcome:
+                    raise LifecycleError("already_resolved")
+                # idempotent replay of a settlement that already committed
+                fresh = await _load_view(session, market_id)
+                return {"market": market_view(fresh)}
 
             await session.execute(
                 text("UPDATE markets SET status = 'resolved', outcome = :o WHERE id = :id"),
@@ -109,10 +115,25 @@ async def settle_market(market_id: int, outcome: str) -> dict[str, Any]:
                 )
             ).scalar_one()
 
+            # lock winners' user rows before their positions — the same
+            # user → position order every other writer takes
+            winner_ids = (
+                await session.execute(
+                    text("SELECT DISTINCT user_id FROM positions "
+                         "WHERE market_id = :m AND side = :s AND shares > 0"),
+                    {"m": market_id, "s": outcome},
+                )
+            ).scalars().all()
+            if winner_ids:
+                await session.execute(
+                    text("SELECT id FROM users WHERE id = ANY(:ids) ORDER BY id FOR UPDATE"),
+                    {"ids": sorted(winner_ids)},
+                )
             winners = (
                 await session.execute(
                     text("SELECT user_id, shares FROM positions "
-                         "WHERE market_id = :m AND side = :s AND shares > 0 FOR UPDATE"),
+                         "WHERE market_id = :m AND side = :s AND shares > 0 "
+                         "ORDER BY user_id FOR UPDATE"),
                     {"m": market_id, "s": outcome},
                 )
             ).mappings().all()
@@ -132,6 +153,22 @@ async def settle_market(market_id: int, outcome: str) -> dict[str, Any]:
                 {"m": market_id},
             )
             await ledger.post_payouts(session, market_id, payouts)
+            # sub-cent truncation across payouts and unsold losing-side
+            # inventory leave dust in escrow — drain it so a resolved
+            # market's escrow ends at exactly zero
+            residual = (
+                await session.execute(
+                    text("SELECT COALESCE(SUM(CASE WHEN e.direction = 'debit' "
+                         "THEN e.amount_cents ELSE -e.amount_cents END), 0) "
+                         "FROM ledger_entries e JOIN ledger_accounts a ON a.id = e.account_id "
+                         "WHERE a.kind = 'market_escrow' AND a.market_id = :m"),
+                    {"m": market_id},
+                )
+            ).scalar_one()
+            if residual > 0:
+                await ledger.post_escrow_burn(
+                    session, market_id, int(residual), f"resolution market {market_id}"
+                )
             await record_event(
                 session,
                 aggregate=f"market:{m['slug']}",

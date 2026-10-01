@@ -11,7 +11,7 @@ import logging
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -19,6 +19,9 @@ log = logging.getLogger("meridian.intel.retrieval")
 
 UA = "Meridian/1.0 (prediction-market research; local dev)"
 TIMEOUT = 6.0
+# external bodies are parsed as XML/JSON but bounded — an oversized feed
+# (or a source that turns hostile) must not be parsed whole
+MAX_BODY_BYTES = 2_000_000
 
 
 @dataclass
@@ -45,6 +48,9 @@ async def news_search(query: str, limit: int = 8) -> list[RawSource]:
                 params={"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"},
             )
             resp.raise_for_status()
+            if len(resp.content) > MAX_BODY_BYTES:
+                log.warning("news feed for %r exceeded %d bytes; skipping", query, MAX_BODY_BYTES)
+                return []
             root = ET.fromstring(resp.text)
     except Exception:
         log.warning("news search failed for %r", query, exc_info=True)
@@ -65,7 +71,7 @@ async def news_search(query: str, limit: int = 8) -> list[RawSource]:
             try:
                 from email.utils import parsedate_to_datetime
 
-                pub = parsedate_to_datetime(raw_date).astimezone(timezone.utc)
+                pub = parsedate_to_datetime(raw_date).astimezone(UTC)
             except ValueError:
                 pub = None
         out.append(RawSource(title=_clean(title), url=link, publisher=publisher,

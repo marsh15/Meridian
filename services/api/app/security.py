@@ -5,7 +5,7 @@ import secrets
 # Node's crypto.scryptSync defaults, which the original Express server used:
 # N=16384, r=8, p=1, 64-byte key. Passwords are stored as "salt:hash" hex so
 # accounts created by the Node server keep working unchanged.
-_SCRYPT = dict(n=16384, r=8, p=1, dklen=64, maxmem=64 * 1024 * 1024)
+_SCRYPT = {"n": 16384, "r": 8, "p": 1, "dklen": 64, "maxmem": 64 * 1024 * 1024}
 
 
 def hash_password(password: str) -> str:

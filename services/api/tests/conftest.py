@@ -16,12 +16,13 @@ os.environ.setdefault("SETTLEMENT_MODE", "inline")
 # explicitly against fakeredis in test_redis_features.py.
 os.environ.setdefault("REDIS_URL", "")
 
-import asyncpg  # noqa: E402
-import pytest  # noqa: E402
-from alembic import command  # noqa: E402
-from alembic.config import Config  # noqa: E402
-from httpx import ASGITransport, AsyncClient  # noqa: E402
-from sqlalchemy import text  # noqa: E402
+import asyncpg
+import pytest
+from alembic.config import Config
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import text
+
+from alembic import command
 
 
 async def _create_test_db() -> None:

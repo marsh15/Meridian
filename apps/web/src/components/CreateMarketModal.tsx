@@ -28,7 +28,7 @@ export default function CreateMarketModal({ onClose }: { onClose: () => void }) 
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [customCat, setCustomCat] = useState("");
   const [initialYes, setInitialYes] = useState(50);
-  const { closing, close } = useModalLifecycle(onClose);
+  const { closing, close, dialogRef } = useModalLifecycle(onClose);
 
   const minDate = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
 
@@ -65,6 +65,7 @@ export default function CreateMarketModal({ onClose }: { onClose: () => void }) 
         role="dialog"
         aria-modal="true"
         aria-label="Create a market"
+        ref={dialogRef}
       >
         <button className="modal-x" onClick={close} aria-label="Close">
           <CloseIcon />

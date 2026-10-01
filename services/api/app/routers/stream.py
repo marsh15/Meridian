@@ -9,17 +9,17 @@ heartbeat every 15 s keeps proxies from closing idle connections.
 """
 
 import asyncio
+import contextlib
 import json
 from collections.abc import AsyncIterator
 
 import asyncpg
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db import SessionFactory, get_session
+from app.db import SessionFactory
 from app.fanout import tick_hub
 
 router = APIRouter(prefix="/api")
@@ -88,10 +88,8 @@ async def _tick_stream(slug: str | None) -> AsyncIterator[str]:
                     yield _sse(data)
         finally:
             tick_hub.active_streams -= 1
-            try:
+            with contextlib.suppress(Exception):
                 await pubsub.aclose()
-            except Exception:
-                pass
         return
 
     # fallback: no Redis — one dedicated Postgres LISTEN per client
@@ -111,7 +109,7 @@ async def _tick_stream(slug: str | None) -> AsyncIterator[str]:
         while True:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=15.0)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 yield ": ping\n\n"
                 continue
             data = json.loads(payload)
@@ -128,12 +126,13 @@ async def stream_all() -> StreamingResponse:
 
 
 @router.get("/markets/{slug}/stream")
-async def stream_market(
-    slug: str, session: AsyncSession = Depends(get_session)
-) -> StreamingResponse:
-    exists = await session.execute(text("SELECT 1 FROM markets WHERE slug = :s"), {"s": slug})
-    if exists.first() is None:
-        from fastapi import HTTPException
-
-        raise HTTPException(404, "Market not found.")
+async def stream_market(slug: str) -> StreamingResponse:
+    # The existence check runs on a short-lived session on purpose: a
+    # yield-dependency would hold its pooled connection (in an open read
+    # transaction) until the stream ends — minutes per viewer — and ~15
+    # concurrent viewers would exhaust the pool for the whole API.
+    async with SessionFactory() as session:
+        exists = await session.execute(text("SELECT 1 FROM markets WHERE slug = :s"), {"s": slug})
+        if exists.first() is None:
+            raise HTTPException(404, "Market not found.")
     return StreamingResponse(_tick_stream(slug), media_type="text/event-stream", headers=HEADERS)

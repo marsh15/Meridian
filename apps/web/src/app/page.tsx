@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 import { fmtVol } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
-import { useMarketsStream } from "@/hooks/useMarketStream";
+import { useMarketsStream, useStreamLive } from "@/hooks/useMarketStream";
 import MarketCard from "@/components/MarketCard";
 import CreateMarketModal from "@/components/CreateMarketModal";
 import type { MarketCardData } from "@meridian/contracts";
@@ -34,6 +34,7 @@ export default function Home() {
 
   const { data, isLoading } = useQuery({ queryKey: ["markets"], queryFn: api.markets });
   useMarketsStream(true); // live prices on cards + tape
+  const streamLive = useStreamLive();
 
   const markets: MarketCardData[] | undefined = data?.markets;
 
@@ -90,11 +91,16 @@ export default function Home() {
       <section className="hero">
         <div className="wrap">
           <div className="hero-eyebrow">
-            <span className="live-dot" aria-hidden="true" />
+            <span
+              className={`live-dot ${streamLive ? "" : "off"}`}
+              aria-hidden="true"
+            />
             <span className="label">
-              {totals
-                ? `${totals.count} live contracts · ${fmtVol(totals.volume)} traded · ${totals.traders.toLocaleString()} traders`
-                : "Loading markets…"}
+              {!streamLive
+                ? "Reconnecting prices…"
+                : totals
+                  ? `${totals.count} live contracts · ${fmtVol(totals.volume)} traded · ${totals.traders.toLocaleString()} traders`
+                  : "Loading markets…"}
             </span>
           </div>
 

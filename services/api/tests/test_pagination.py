@@ -1,9 +1,9 @@
 """Keyset pagination on trades and price history: windows are stable under
 live inserts, walks don't skip or repeat rows, limits are clamped server-side."""
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 
 async def _create_market(client, yes=50):

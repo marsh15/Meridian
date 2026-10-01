@@ -11,6 +11,7 @@ instance's clients see every tick.
 """
 
 import asyncio
+import contextlib
 import logging
 
 import asyncpg
@@ -31,6 +32,9 @@ class TickHub:
         self._starter: asyncio.Task | None = None
         self._pg: asyncpg.Connection | None = None
         self.active_streams = 0
+        # fire-and-forget publish tasks must be referenced or the GC may
+        # cancel them mid-flight; the discard callback keeps the set small
+        self._bg_tasks: set[asyncio.Task] = set()
 
     @property
     def enabled(self) -> bool:
@@ -62,16 +66,12 @@ class TickHub:
             task = getattr(self, attr)
             if task is not None:
                 task.cancel()
-                try:
+                with contextlib.suppress(asyncio.CancelledError):
                     await task
-                except asyncio.CancelledError:
-                    pass
                 setattr(self, attr, None)
         if self._pg is not None:
-            try:
+            with contextlib.suppress(Exception):
                 await self._pg.close()
-            except Exception:
-                pass
             self._pg = None
 
     async def _bridge(self, r) -> None:
@@ -86,7 +86,12 @@ class TickHub:
                     loop.call_soon_threadsafe(self._publish_now, r, payload)
 
                 await conn.add_listener("market_ticks", on_notify)
-                await asyncio.Future()  # parked until cancelled/crashed
+                # a half-dead TCP path (NAT idle timeout, no FIN) never
+                # raises — probe the connection so the link failure turns
+                # into the reconnect below instead of silent ticklessness
+                while True:
+                    await asyncio.sleep(30.0)
+                    await conn.execute("SELECT 1")
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -94,10 +99,8 @@ class TickHub:
                 await asyncio.sleep(1)
             finally:
                 if self._pg is not None:
-                    try:
+                    with contextlib.suppress(Exception):
                         await self._pg.close()
-                    except Exception:
-                        pass
                     self._pg = None
 
     def _publish_now(self, r, payload: str) -> None:
@@ -107,7 +110,9 @@ class TickHub:
             except Exception:
                 log.warning("tick publish failed", exc_info=True)
 
-        asyncio.ensure_future(_publish())
+        task = asyncio.ensure_future(_publish())
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
 
     async def subscribe(self):
         """A Redis pubsub subscribed to the tick channel, or None when the

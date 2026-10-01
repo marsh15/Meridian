@@ -1,17 +1,23 @@
 import {
   BriefPageSchema,
   CandlesSchema,
+  CreateMarketResponseSchema,
   ExplanationPageSchema,
   HistoryPageSchema,
   LeaderboardEntrySchema,
   MarketCardSchema,
   MarketDetailSchema,
+  OrderResponseSchema,
   PortfolioSchema,
+  ResolveResponseSchema,
   TradesPageSchema,
   UserProfilePageSchema,
   UserSchema,
   type Brief,
+  type CreateMarketResponse,
   type Explanation,
+  type OrderResponse,
+  type ResolveResponse,
   type User,
 } from "@meridian/contracts";
 
@@ -104,19 +110,19 @@ export const api = {
   portfolio: () => req("/api/portfolio", (raw) => PortfolioSchema.parse(raw)),
   userProfile: (name: string) =>
     req(`/api/users/${encodeURIComponent(name)}`, (raw) => UserProfilePageSchema.parse(raw)),
-  createMarket: (body: object) =>
-    req("/api/markets", (raw) => raw as { market: { slug: string } }, {
+  createMarket: (body: object): Promise<CreateMarketResponse> =>
+    req("/api/markets", (raw) => CreateMarketResponseSchema.parse(raw), {
       method: "POST",
       body: JSON.stringify(body),
     }),
-  order: (slug: string, body: object, idempotencyKey?: string) =>
-    req(`/api/markets/${slug}/orders`, (raw) => raw, {
+  order: (slug: string, body: object, idempotencyKey?: string): Promise<OrderResponse> =>
+    req(`/api/markets/${slug}/orders`, (raw) => OrderResponseSchema.parse(raw), {
       method: "POST",
       body: JSON.stringify(body),
       headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : undefined,
     }),
-  resolve: (slug: string, outcome: string) =>
-    req(`/api/markets/${slug}/resolve`, (raw) => raw, {
+  resolve: (slug: string, outcome: string): Promise<ResolveResponse> =>
+    req(`/api/markets/${slug}/resolve`, (raw) => ResolveResponseSchema.parse(raw), {
       method: "POST",
       body: JSON.stringify({ outcome }),
     }),

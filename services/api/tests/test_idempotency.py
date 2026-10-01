@@ -3,13 +3,13 @@ original fill without re-executing, key reuse with a different order is
 rejected, and two racing duplicates collapse into one trade."""
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
 
 from app.db import engine
 
-FUTURE = (datetime.now(timezone.utc) + timedelta(days=30)).strftime("%Y-%m-%d")
+FUTURE = (datetime.now(UTC) + timedelta(days=30)).strftime("%Y-%m-%d")
 
 BUY = {"side": "yes", "action": "buy", "dollarsCents": 2_500}
 
@@ -71,7 +71,8 @@ async def test_key_reused_with_different_order_rejected(client, alice):
 
     r1 = await _order(client, m["slug"], key="k-clash")
     assert r1.status_code == 200
-    r2 = await _order(client, m["slug"], body={"side": "no", "action": "buy", "dollarsCents": 2_500}, key="k-clash")
+    r2 = await _order(client, m["slug"],
+                       body={"side": "no", "action": "buy", "dollarsCents": 2_500}, key="k-clash")
     assert r2.status_code == 409
     assert "reused with a different order" in r2.json()["error"]
     assert await _count(engine, m["slug"], "trades") == 1

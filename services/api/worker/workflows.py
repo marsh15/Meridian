@@ -57,7 +57,14 @@ class MarketLifecycleWorkflow:
             activities.settle_market,
             args=[ml.market_id, outcome],
             schedule_to_close_timeout=timedelta(minutes=5),
-            retry_policy=RetryPolicy(maximum_attempts=20),
+            # settle_market returns success on same-outcome replay, so
+            # retries are safe; only a genuine outcome conflict (or a bug)
+            # raises LifecycleError, and burning 20 attempts on that helps
+            # nobody — fail the workflow fast instead
+            retry_policy=RetryPolicy(
+                maximum_attempts=20,
+                non_retryable_error_types=["LifecycleError"],
+            ),
         )
         return outcome or "yes"
 

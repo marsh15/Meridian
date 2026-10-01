@@ -42,20 +42,25 @@ jobs:
           key: temporalio-test-server-${{ runner.os }}
 
       - name: Sync dependencies
-        run: uv sync
+        # --locked: CI must test exactly what the deploy image builds
+        # (uv sync --frozen) — a drifted lockfile fails here, not at deploy
+        run: uv sync --locked
+
+      - name: Lint
+        run: uv run ruff check .
 
       - name: Test
         run: uv run pytest -q
 
   web:
-    name: web — tsc + vitest
+    name: web — tsc + vitest + build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      # no version: the action reads packageManager from package.json, so
+      # CI and corepack (deploy image) run the same pnpm
       - uses: pnpm/action-setup@v4
-        with:
-          version: 12
 
       - uses: actions/setup-node@v4
         with:
@@ -70,3 +75,7 @@ jobs:
 
       - name: Unit tests
         run: pnpm --filter meridian-web test:unit
+
+      # a prerender/build failure must fail the PR, not the first deploy
+      - name: Production build
+        run: pnpm --filter meridian-web build

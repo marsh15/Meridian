@@ -5,15 +5,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/auth/AuthContext";
 import { api } from "@/lib/api";
 import { sharesForDollars, proceedsForShares } from "@/lib/amm";
+import { idempotencyKey } from "@/lib/safeUrl";
 import { useHotkeys } from "@/hooks/useHotkeys";
 import type { MarketDetail } from "@meridian/contracts";
 
 const PRESETS = [10, 50, 100, 250];
-
-interface OrderResponse {
-  fill: { action: string; shares: number; priceCents: number; amountCents: number };
-  balanceCents: number;
-}
 
 export default function TradePanel({
   market,
@@ -95,11 +91,7 @@ export default function TradePanel({
         action === "buy"
           ? { side, action, dollarsCents: Math.round(Number(dollars) * 100) }
           : { side, action, shares: Number(sellShares) };
-      const res = (await api.order(
-        market.slug,
-        body,
-        crypto.randomUUID(),
-      )) as unknown as OrderResponse;
+      const res = await api.order(market.slug, body, idempotencyKey());
       setBalanceCents(res.balanceCents);
       setToast(
         `${res.fill.action === "buy" ? "Bought" : "Sold"} ${res.fill.shares} ${side.toUpperCase()} @ ${res.fill.priceCents}¢`,

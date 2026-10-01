@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { api, ApiError } from "@/lib/api";
 import type { Driver, Explanation } from "@meridian/contracts";
+import { safeHttpUrl } from "@/lib/safeUrl";
 
 /* same ids/labels as the ChartCard range chips */
 const RANGE_LABELS: Record<string, string> = {
@@ -127,7 +128,15 @@ export default function ExplainPanel({
           {explanation.sources.length > 0 && (
             <div className="explain-sources">
               {explanation.sources.map((s) => (
-                <a key={s.idx} href={s.url} target="_blank" rel="noreferrer">
+                <a
+                  key={s.idx}
+                  href={safeHttpUrl(s.url) ?? "#"}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => {
+                    if (safeHttpUrl(s.url) == null) e.preventDefault();
+                  }}
+                >
                   {s.title}
                 </a>
               ))}
