@@ -17,6 +17,7 @@ from app import ledger
 from app.amm import price_yes
 from app.db import SessionFactory
 from app.events import record_event
+from app.redis import invalidate_markets_cache
 from app.views import market_view, select_market
 
 
@@ -67,6 +68,9 @@ async def close_market(market_id: int) -> bool:
                     "status": "closed", "outcome": None,
                 },
             )
+    # list rows show status — drop the cached payload (fail-open: without
+    # Redis there is nothing to drop and the 2s TTL bounds staleness)
+    await invalidate_markets_cache()
     return True
 
 
@@ -140,4 +144,5 @@ async def settle_market(market_id: int, outcome: str) -> dict[str, Any]:
             )
 
         fresh = await _load_view(session, market_id)
-        return {"market": market_view(fresh)}
+    await invalidate_markets_cache()
+    return {"market": market_view(fresh)}

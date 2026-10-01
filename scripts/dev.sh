@@ -4,16 +4,16 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "==> starting Postgres + Kafka"
+echo "==> starting Postgres + Kafka + Redis + telemetry"
 docker compose up -d --wait
 
 echo "==> provisioning Kafka topics"
 ./scripts/provision-topics.sh
 
-# bootstrap web deps on a fresh clone; `uv run` syncs the API on its own
-if [ ! -d apps/web/node_modules ]; then
-  echo "==> installing web dependencies"
-  (cd apps/web && npm install)
+# bootstrap workspace deps on a fresh clone; `uv run` syncs the API itself
+if [ ! -d node_modules ]; then
+  echo "==> installing workspace dependencies (pnpm)"
+  pnpm install
 fi
 
 echo "==> applying migrations"
@@ -34,16 +34,18 @@ trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 echo "==> api  http://127.0.0.1:8393  (docs at /docs)"
-(cd services/api && exec uv run uvicorn app.main:app --reload --port 8393) &
+(cd services/api && OTLP_ENDPOINT=http://localhost:4319 exec uv run uvicorn app.main:app --reload --port 8393) &
 pids+=($!)
 
 echo "==> web  http://localhost:3001"
-(cd apps/web && exec npm run dev) &
+(cd apps/web && exec pnpm dev) &
 pids+=($!)
 
 echo "==> worker  temporal lifecycle (auto-close timers, durable settlement)"
 (cd services/api && exec uv run python -m worker) &
 pids+=($!)
+
+echo "==> dashboards  grafana http://localhost:3002 · prometheus http://localhost:9091"
 
 # when either process dies, take the other with it
 while kill -0 "${pids[@]}" >/dev/null 2>&1; do

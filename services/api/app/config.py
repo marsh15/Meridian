@@ -23,6 +23,17 @@ class Settings(BaseSettings):
     # "temporal": the API signals the workflow and settlement runs in the
     # worker. "inline": settlement runs in the request (tests, no worker).
     settlement_mode: str = "temporal"
+    # Redis (phase 5): rate limiting, hot-market cache, SSE tick fan-out.
+    # Empty string disables all three — every consumer of this fails open,
+    # so a deploy without Redis keeps working (stream falls back to
+    # per-client pg LISTEN).
+    redis_url: str = "redis://localhost:6399/0"
+    cache_ttl_seconds: float = 2.0
+    auth_requests_per_minute: int = 10
+    orders_per_minute: int = 30
+    market_creates_per_hour: int = 10
+    # OTLP endpoint (http://localhost:4318) — empty disables telemetry
+    otlp_endpoint: str = ""
 
     @property
     def asyncpg_dsn(self) -> str:

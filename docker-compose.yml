@@ -102,6 +102,77 @@ services:
       retries: 30
       start_period: 25s
 
+  redis:
+    # rate limiting + hot-market cache + SSE tick fan-out (ROADMAP phase 5).
+    # Everything touching it fails open — the API stays correct without it.
+    image: redis:7-alpine
+    container_name: meridian-redis
+    restart: unless-stopped
+    command: ["redis-server", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      # host 6399 — 6379 is commonly taken by a local Redis
+      - "6399:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  # ------------------------- observability (phase 5) -------------------------
+  # Every meridian process pushes OTLP to the collector; Prometheus scrapes
+  # the collector, Tempo stores traces, Grafana reads both. The order-
+  # pipeline dashboard lives in docker/grafana/dashboards/.
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+    container_name: meridian-otel
+    restart: unless-stopped
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./docker/otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # host 4319 — something in Docker Desktop's backend already squats 4318
+      - "4319:4318"
+
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: meridian-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+
+  tempo:
+    # trace storage on a throwaway volume — dev-only, no object store
+    image: grafana/tempo:2.7.0
+    container_name: meridian-tempo
+    restart: unless-stopped
+    # the image runs as uid 10001, which can't mkdir inside a fresh
+    # root-owned named volume; dev container just runs as root
+    user: "0:0"
+    command: ["-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./docker/tempo.yaml:/etc/tempo/tempo.yaml:ro
+      - meridian-tempodata:/tmp/tempo
+    ports:
+      - "3200:3200"
+
+  grafana:
+    image: grafana/grafana:11.5.0
+    container_name: meridian-grafana
+    restart: unless-stopped
+    environment:
+      # local dev dashboard — no login friction
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3002:3000"
+
   temporal-ui:
     # optional: `docker compose --profile ui up` → http://localhost:8081
     image: temporalio/ui:2.35.0
@@ -119,3 +190,4 @@ volumes:
   meridian-pgdata:
   meridian-kafkadata:
   meridian-temporal-pgdata:
+  meridian-tempodata:

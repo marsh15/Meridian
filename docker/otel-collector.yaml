@@ -1,0 +1,37 @@
+# OTLP entrypoint for every meridian process (api, relay, consumers —
+# OTLP_ENDPOINT=http://localhost:4318). Metrics are re-exposed as a
+# Prometheus scrape target on :8889; traces are forwarded to Tempo.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # carry resource attrs (service.name) onto every metric series so the
+    # dashboard can split api / relay / consumers
+    resource_to_telemetry_conversion:
+      enabled: true
+  otlphttp/tempo:
+    endpoint: http://tempo:4318
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheus]
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp/tempo]

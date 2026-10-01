@@ -11,6 +11,10 @@ TEST_DSN = os.environ.get(
 )
 os.environ["DATABASE_URL"] = TEST_DSN
 os.environ.setdefault("SETTLEMENT_MODE", "inline")
+# Redis off by default: existing suites place many orders per user per
+# minute and must never trip a limiter. Redis-backed behavior is tested
+# explicitly against fakeredis in test_redis_features.py.
+os.environ.setdefault("REDIS_URL", "")
 
 import asyncpg  # noqa: E402
 import pytest  # noqa: E402

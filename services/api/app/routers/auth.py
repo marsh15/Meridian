@@ -12,6 +12,7 @@ from app import ledger
 from app.config import settings
 from app.db import get_session
 from app.deps import current_user, require_user
+from app.ratelimit import auth_limit
 from app.security import hash_password, verify_password
 
 router = APIRouter(prefix="/api")
@@ -50,6 +51,7 @@ class SignupBody(BaseModel):
 @router.post("/auth/signup")
 async def signup(
     body: SignupBody | None = None,
+    _rl: None = Depends(auth_limit),
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
     body = body or SignupBody()
@@ -92,6 +94,7 @@ class LoginBody(BaseModel):
 @router.post("/auth/login")
 async def login(
     body: LoginBody | None = None,
+    _rl: None = Depends(auth_limit),
     session: AsyncSession = Depends(get_session),
 ) -> JSONResponse:
     body = body or LoginBody()

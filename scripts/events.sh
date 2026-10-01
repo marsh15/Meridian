@@ -17,11 +17,11 @@ trap 'cleanup; exit 130' INT
 trap 'cleanup; exit 143' TERM
 
 echo "==> relay   outbox → exchange.trade-events / exchange.market-events"
-(cd services/api && exec uv run python -m relay) &
+(cd services/api && OTLP_ENDPOINT=http://localhost:4319 exec uv run python -m relay) &
 pids+=($!)
 
 echo "==> consumers  candles · volume · analytics  (group per read model)"
-(cd services/api && exec uv run python -m consumers) &
+(cd services/api && OTLP_ENDPOINT=http://localhost:4319 exec uv run python -m consumers) &
 pids+=($!)
 
 while kill -0 "${pids[@]}" >/dev/null 2>&1; do

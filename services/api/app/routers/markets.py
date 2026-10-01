@@ -11,6 +11,7 @@ import re
 import string
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -18,12 +19,20 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import ledger, metrics
 from app.amm import B, opening_q, price_yes, proceeds_for_shares, shares_for_dollars
 from app.config import CATEGORIES, settings
 from app.db import get_session
 from app.deps import current_user, require_user
 from app.events import record_event
 from app import ledger
+from app.ratelimit import create_market_limit, order_limit
+from app.redis import (
+    MARKETS_CACHE_KEY,
+    cache_get_json,
+    cache_set_json,
+    invalidate_markets_cache,
+)
 from app.views import decimal_shares, market_view, select_market, tick_payload
 
 router = APIRouter(prefix="/api")
@@ -104,6 +113,11 @@ async def _history_page(
 
 @router.get("/markets")
 async def list_markets(session: AsyncSession = Depends(get_session)) -> dict:
+    # the hot read (home-page poll): every market plus its full price
+    # history. Served from Redis for cache_ttl_seconds — ticks keep clients
+    # live over SSE, so a couple of seconds of list staleness is invisible.
+    if (cached := await cache_get_json(MARKETS_CACHE_KEY)) is not None:
+        return cached
     rows = (await session.execute(select_market(" ORDER BY m.created_at DESC"))).mappings().all()
     history = (
         await session.execute(
@@ -113,9 +127,11 @@ async def list_markets(session: AsyncSession = Depends(get_session)) -> dict:
     by_market: dict[int, list[int]] = {}
     for h in history:
         by_market.setdefault(h["market_id"], []).append(h["price_cents"])
-    return {
+    payload = {
         "markets": [market_view(m, history=by_market.get(m["id"], [])) for m in rows]
     }
+    await cache_set_json(MARKETS_CACHE_KEY, payload, settings.cache_ttl_seconds)
+    return payload
 
 
 class CreateMarketBody(BaseModel):
@@ -130,7 +146,7 @@ class CreateMarketBody(BaseModel):
 @router.post("/markets")
 async def create_market(
     body: CreateMarketBody | None = None,
-    user: dict = Depends(require_user),
+    user: dict = Depends(create_market_limit),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     body = body or CreateMarketBody()
@@ -183,6 +199,10 @@ async def create_market(
             session, aggregate=f"market:{slug}", event_type="MarketCreated",
             payload={"slug": slug, "question": q, "category": cat, "openingYesCents": int(p)},
         )
+    # the committed market must be in the very next list read — a lingering
+    # 2s-TTL entry would hide it (post-commit purge; concurrent refills
+    # between commit and purge are killed by the delete too)
+    await invalidate_markets_cache()
     return {
         "market": market_view(
             {**m, "creator_name": user["display_name"], "trade_volume_cents": 0,
@@ -406,7 +426,7 @@ async def place_order(
     slug: str,
     request: Request,
     body: OrderBody | None = None,
-    user: dict = Depends(require_user),
+    user: dict = Depends(order_limit),
     session: AsyncSession = Depends(get_session),
 ) -> dict:
     body = body or OrderBody()
@@ -415,6 +435,7 @@ async def place_order(
         raise HTTPException(400, "Side must be yes or no.")
     if action not in ("buy", "sell"):
         raise HTTPException(400, "Action must be buy or sell.")
+    t0 = perf_counter()
 
     # Idempotency-Key: a retried POST with the same key returns the original
     # fill instead of trading again. The key row lives in the trade's
@@ -425,6 +446,9 @@ async def place_order(
         raise HTTPException(400, "Idempotency-Key header too long (max 128).")
     req_hash = _order_request_hash(slug, body)
 
+    # matching window opens before the transaction: row-lock queueing time
+    # (other traders holding the market lock) belongs in the matching p99
+    t_match = perf_counter()
     async with session.begin():
         row = (
             await session.execute(
@@ -609,6 +633,11 @@ async def place_order(
                 {"r": json.dumps(response), "u": user["id"], "k": idem},
             )
 
+    # fills only — idempotent replays return from inside the transaction and
+    # would drag the latency story toward a cached read
+    metrics.matching_latency.record(perf_counter() - t_match)
+    metrics.order_latency.record(perf_counter() - t0)
+    metrics.orders.add(1, {"action": action})
     return response
 
 

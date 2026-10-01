@@ -1,10 +1,11 @@
-"""SSE live-price streams (ADR 0004).
+"""SSE live-price streams (ADR 0004, fan-out in ADR 0009).
 
-Each client holds one dedicated asyncpg connection LISTENing on
-`market_ticks`. Events fire via pg_notify inside the trade/resolve
-transaction and are delivered by Postgres on commit, so a rolled-back trade
-never reaches the stream. A comment heartbeat every 15 s keeps proxies from
-closing idle connections.
+Ticks originate as pg_notify inside the trade/resolve transaction and are
+delivered by Postgres on commit, so a rolled-back trade never reaches the
+stream. Delivery to clients goes through the process-wide Redis fan-out
+hub when Redis is available (one Postgres LISTEN per process); otherwise
+each client falls back to its own Postgres LISTEN connection. A comment
+heartbeat every 15 s keeps proxies from closing idle connections.
 """
 
 import asyncio
@@ -19,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import SessionFactory, get_session
+from app.fanout import tick_hub
 
 router = APIRouter(prefix="/api")
 
@@ -56,6 +58,43 @@ async def _market_snapshot(slug: str) -> dict | None:
 
 
 async def _tick_stream(slug: str | None) -> AsyncIterator[str]:
+    pubsub = await tick_hub.subscribe()
+    if pubsub is not None:
+        tick_hub.active_streams += 1
+        try:
+            # subscribed before the snapshot, so nothing ticks in between
+            if slug is not None:
+                snapshot = await _market_snapshot(slug)
+                if snapshot is not None:
+                    yield _sse(snapshot)
+            # get_message handles its own timeout per call; wrapping an
+            # async generator's __anext__ in wait_for instead corrupts the
+            # generator on cancel and busy-loops the event loop
+            while True:
+                try:
+                    msg = await pubsub.get_message(
+                        ignore_subscribe_messages=True, timeout=15.0
+                    )
+                except Exception:
+                    # broken pubsub (redis restart mid-stream): end the
+                    # stream; the browser's EventSource reconnects and
+                    # falls back or resubscribes
+                    return
+                if msg is None:
+                    yield ": ping\n\n"
+                    continue
+                data = json.loads(msg["data"])
+                if slug is None or data.get("slug") == slug:
+                    yield _sse(data)
+        finally:
+            tick_hub.active_streams -= 1
+            try:
+                await pubsub.aclose()
+            except Exception:
+                pass
+        return
+
+    # fallback: no Redis — one dedicated Postgres LISTEN per client
     conn = await asyncpg.connect(settings.asyncpg_dsn)
     queue: asyncio.Queue[str] = asyncio.Queue()
     loop = asyncio.get_running_loop()

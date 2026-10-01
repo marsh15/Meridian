@@ -5,14 +5,18 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
+from time import monotonic
 from typing import Any, Protocol
 
 from aiokafka import AIOKafkaProducer
+from opentelemetry import metrics as otel_metrics
+from opentelemetry.metrics import Observation
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db import SessionFactory
+from app.telemetry import setup_telemetry
 
 log = logging.getLogger("meridian.relay")
 
@@ -21,8 +25,43 @@ TOPIC_MARKETS = "exchange.market-events"
 
 BATCH = 200
 IDLE_SLEEP = 0.25
+LAG_INTERVAL = 2.0
 
 _MARKET_EVENTS = {"MarketCreated", "MarketResolved", "MarketClosed"}
+
+# outbox lag, refreshed by the pump loop and read by the gauge at collection
+lag_state: dict[str, float] = {"pending": 0, "oldest_age_s": 0.0}
+
+_meter = otel_metrics.get_meter("meridian.relay")
+
+
+def _observe_pending(_options: Any) -> list[Observation]:
+    return [Observation(lag_state["pending"])]
+
+
+def _observe_oldest(_options: Any) -> list[Observation]:
+    return [Observation(lag_state["oldest_age_s"])]
+
+
+_meter.create_observable_gauge("meridian.outbox.pending", callbacks=[_observe_pending])
+_meter.create_observable_gauge(
+    "meridian.outbox.oldest.age", unit="s", callbacks=[_observe_oldest]
+)
+
+
+async def measure_lag() -> None:
+    async with SessionFactory() as session:
+        row = (
+            await session.execute(
+                text(
+                    "SELECT count(*) AS pending, COALESCE("
+                    "EXTRACT(EPOCH FROM (now() - MIN(created_at))), 0) AS oldest "
+                    "FROM outbox_events WHERE published_at IS NULL"
+                )
+            )
+        ).first()
+    lag_state["pending"] = float(row.pending)
+    lag_state["oldest_age_s"] = float(row.oldest)
 
 
 def topic_for(event_type: str) -> str | None:
@@ -103,6 +142,7 @@ async def relay_once(producer: Producer, session: AsyncSession) -> int:
 
 
 async def main() -> None:
+    setup_telemetry(service_name="meridian-relay")
     producer = AIOKafkaProducer(
         bootstrap_servers=settings.kafka_bootstrap_servers,
         acks="all",  # a marked row is guaranteed replicated by the broker
@@ -111,11 +151,15 @@ async def main() -> None:
     await producer.start()
     log.info("relay started → %s", settings.kafka_bootstrap_servers)
     total = 0
+    last_lag = 0.0
     try:
         while True:
             async with SessionFactory() as session:
                 n = await relay_once(producer, session)
             total += n
+            if monotonic() - last_lag >= LAG_INTERVAL:
+                await measure_lag()
+                last_lag = monotonic()
             if n == 0:
                 await asyncio.sleep(IDLE_SLEEP)
     finally:
