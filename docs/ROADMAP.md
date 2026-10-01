@@ -46,14 +46,19 @@ projection (`/api/ledger/reconcile`), and the leaderboard and portfolio
 reading from the journal. Single-node Temporal lives in compose with its
 own throwaway Postgres; the UI is `docker compose --profile ui up`.
 
-## Phase 4 — Product surface
+## Phase 4 — Product surface (shipped)
 
-- Lightweight Charts for probability history with range switcher + event
-  markers (replaces the hand-rolled SVG chart when ranges/markers land).
-- Portfolio terminal page (positions table with live P&L), leaderboard,
-  user pages, command palette (⌘K), keyboard trading.
-- Design-system pass: Tailwind + shadcn/Base UI only if component count
-  outgrows the current CSS — the bespoke look is the asset, not a liability.
+Lightweight Charts replaced the hand-rolled SVG: range switcher
+(1H–ALL) over server-side `date_bin` candles, volume pane, and
+lifecycle markers from the outbox. The portfolio terminal tracks live
+P&L off the global SSE stream (one subscription, local recompute, tick
+flashes); the leaderboard, trader profiles (`/u/[name]`), and a
+categories index share the ledger-backed reads. ⌘K command palette and
+keyboard trading (B/S/Y/N/Esc) generalize the `/`-to-search pattern.
+Design pass: tabular numerals on every price, Motion restricted to the
+moments that earn it — tweened digits on ticks/fills and the fill
+toast, both reduced-motion-safe. Charts library swap kept the bespoke
+CSS system intact (that boundary held).
 
 ## Phase 5 — Scale & ops (trigger: real users / real load)
 

@@ -7,7 +7,7 @@ market maker, instant fills, live prices over SSE, play money.
 
 | Layer | Choice |
 |---|---|
-| Web | Next.js 15 (App Router) · TypeScript · TanStack Query · Zod · bespoke CSS design system |
+| Web | Next.js 15 (App Router) · TypeScript · TanStack Query · Zod · Lightweight Charts · Motion · bespoke CSS design system |
 | API | Python · FastAPI · Pydantic v2 · SQLAlchemy 2.0 async (asyncpg) · Alembic · uv |
 | Data | PostgreSQL 16 — BIGINT cents + NUMERIC(24,10) shares + double-entry ledger ([ADR 0007](docs/adr/0007-double-entry-ledger.md)) |
 | Workflows | Temporal (single node, own Postgres) — durable market lifecycle: close timers, settlement, payout ([ADR 0008](docs/adr/0008-temporal-lifecycle.md)) |
@@ -90,6 +90,12 @@ docs/            ADRs + ROADMAP + failure model
   from the journal.
 - **Read models** — trades and price history paginate by keyset
   (`?limit&before_id`), so live inserts can't skew a page walk.
+- **Product surface** — Lightweight Charts with range switcher, volume
+  pane, and lifecycle markers; a portfolio terminal with live P&L off
+  the global SSE stream; ⌘K command palette and keyboard trading
+  (B/S/Y/N/Esc); leaderboard, trader profiles, and a categories index;
+  tabular prices everywhere with Motion used only where it means
+  something (tweened digits on ticks/fills, the fill toast).
 
 ## Production checklist
 
