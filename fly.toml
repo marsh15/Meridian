@@ -1,0 +1,40 @@
+# Fly.io single-machine deployment (full walkthrough: docs/deploy.md).
+# Boot with:  fly launch --no-deploy   (name it, don't add databases)
+# then follow docs/deploy.md for Postgres + secrets.
+
+app = "meridian"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # single-machine profile: no Temporal/Kafka; settlement runs in-request
+  SETTLEMENT_MODE = "inline"
+  COOKIE_SECURE = "true"
+  # run without Redis (rate limits/cache/fan-out fail open). Point REDIS_URL
+  # at e.g. Upstash to switch them on:
+  # REDIS_URL = "rediss://..."
+  REDIS_URL = ""
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 200
+    hard_limit = 250
+
+# release phase runs in the newly built image before traffic shifts:
+# migrations apply with the same code that will serve them (alembic.ini
+# and the alembic/ dir resolve relative to services/api, hence the cd)
+[release]
+  command = "cd /srv/api && .venv/bin/alembic upgrade head"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "1gb"

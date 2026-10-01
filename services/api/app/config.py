@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -5,6 +6,20 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     database_url: str = "postgresql+asyncpg://meridian:meridian@localhost:5434/meridian"
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _normalize_dsn(cls, v: str) -> str:
+        # platforms hand out postgres:// or postgresql:// DSNs (fly postgres
+        # attach, Heroku, Render); the engine wants the asyncpg dialect
+        if not isinstance(v, str):
+            return v
+        if v.startswith("postgres://"):
+            v = "postgresql://" + v[len("postgres://"):]
+        if v.startswith("postgresql://"):
+            v = "postgresql+asyncpg://" + v[len("postgresql://"):]
+        return v
+
     session_cookie: str = "meridian_session"
     session_max_age: int = 60 * 60 * 24 * 30
     # prod: COOKIE_SECURE=true so the session cookie only travels over HTTPS

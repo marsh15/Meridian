@@ -3,7 +3,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // real pnpm workspace now: the contracts package is TS source, so Next
-  // transpiles it, and file tracing roots at the repo (workspace) root
+  // transpiles it, and file tracing roots at the repo (workspace) root.
+  // standalone bundles a self-contained server for the deploy image.
+  output: "standalone",
   transpilePackages: ["@meridian/contracts"],
   outputFileTracingRoot: path.join(__dirname, "../../"),
   async rewrites() {
