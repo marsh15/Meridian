@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/auth/AuthContext";
 import { fmtMoney } from "@/lib/format";
+import { AnimatedNumber } from "@/components/AnimatedPrice";
 import { isMacPlatform } from "@/hooks/useHotkeys";
 
 function SearchIcon() {
@@ -105,7 +106,9 @@ export default function Header() {
         {ready && user && (
           <div className="balance-pill" title="Virtual balance">
             <span className="balance-dot" aria-hidden="true" />
-            <span className="amount">{fmtMoney(user.balanceCents)}</span>
+            <span className="amount">
+              <AnimatedNumber value={user.balanceCents} format={(v) => fmtMoney(Math.round(v))} />
+            </span>
           </div>
         )}
         {ready && user ? (

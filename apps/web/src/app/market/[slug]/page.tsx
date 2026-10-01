@@ -9,26 +9,20 @@ import { fmtVol, fmtDate } from "@/lib/format";
 import { useAuth } from "@/auth/AuthContext";
 import { useMarketStream } from "@/hooks/useMarketStream";
 import type { MarketDetail } from "@/lib/schemas";
+import { AnimatedNumber, AnimatedToast } from "@/components/AnimatedPrice";
 import MarketChart from "@/components/MarketChart";
 import TradePanel from "@/components/TradePanel";
 import PositionCard from "@/components/PositionCard";
 import RecentTrades from "@/components/RecentTrades";
 import MarketCard from "@/components/MarketCard";
 
-interface ToastState {
-  msg: string;
-  isError: boolean;
-  closing: boolean;
-}
-
 export default function MarketDetail() {
   const params = useParams<{ slug: string }>();
   const slug = params?.slug ?? null;
   const qc = useQueryClient();
   const [status, setStatus] = useState<"loading" | "ready" | "missing">("loading");
-  const [toast, setToastState] = useState<ToastState | null>(null);
+  const [toast, setToastState] = useState<{ msg: string; isError: boolean } | null>(null);
   const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data, error } = useQuery({
     queryKey: ["market", slug],
@@ -48,18 +42,13 @@ export default function MarketDetail() {
 
   const setToast = useCallback((msg: string, isError = false) => {
     if (hideTimer.current) clearTimeout(hideTimer.current);
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-    setToastState({ msg, isError, closing: false });
-    closeTimer.current = setTimeout(() => {
-      setToastState((t) => (t ? { ...t, closing: true } : null));
-    }, 3300);
+    setToastState({ msg, isError });
     hideTimer.current = setTimeout(() => setToastState(null), 3500);
   }, []);
 
   useEffect(
     () => () => {
       if (hideTimer.current) clearTimeout(hideTimer.current);
-      if (closeTimer.current) clearTimeout(closeTimer.current);
     },
     [],
   );
@@ -144,7 +133,13 @@ export default function MarketDetail() {
             <div className="stat-row">
               <div className="stat">
                 <div className="label">Yes price</div>
-                <b>{market.price}¢</b>
+                <b>
+                  <AnimatedNumber
+                    value={market.price}
+                    format={(v) => `${Math.round(v)}¢`}
+                    flash
+                  />
+                </b>
               </div>
               <div className="stat">
                 <div className="label">24h change</div>
@@ -220,14 +215,11 @@ export default function MarketDetail() {
         </aside>
       </div>
 
-      {toast && (
-        <div
-          className={`toast ${toast.isError ? "error" : ""} ${toast.closing ? "closing" : ""}`}
-          role={toast.isError ? "alert" : "status"}
-        >
-          {toast.msg}
-        </div>
-      )}
+      <AnimatedToast
+        show={toast !== null}
+        message={toast?.msg ?? ""}
+        isError={!!toast?.isError}
+      />
     </main>
   );
 }

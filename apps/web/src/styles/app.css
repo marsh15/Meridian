@@ -1761,3 +1761,37 @@ button {
   justify-content: center;
   padding: 10px 0 2px;
 }
+
+/* ---------- design pass: prices as instruments ---------- */
+/* tabular digits everywhere money moves, so live updates never shift
+   the layout (phase-4 pages/charts/palette carry their own) */
+.px,
+.mini.yes,
+.mini.no,
+.side-toggle button,
+.balance-pill .amount,
+.stat b,
+.tt-side,
+.tt-meta,
+.ht-side,
+.sum-row b,
+.mc-meta {
+  font-variant-numeric: tabular-nums;
+}
+
+/* direction flash on animated numbers (tick-up/tick-down classes are
+   applied by AnimatedNumber while tweening) */
+.tick-up {
+  color: var(--up);
+}
+.tick-down {
+  color: var(--down);
+}
+
+/* motion-driven toast: Motion owns `transform`, so centering moves to the
+   `translate` property and the CSS entrance animation is disabled */
+.toast.motion-toast {
+  translate: -50% 0;
+  transform: none;
+  animation: none;
+}
