@@ -8,11 +8,14 @@ market maker, instant fills, live prices over SSE, play money.
 | Layer | Choice |
 |---|---|
 | Web | Next.js 15 (App Router) · TypeScript · TanStack Query · Zod · Lightweight Charts · Motion · bespoke CSS design system |
+| Contracts | `packages/contracts` — shared Zod schemas for every API shape, consumed as a pnpm workspace package |
 | API | Python · FastAPI · Pydantic v2 · SQLAlchemy 2.0 async (asyncpg) · Alembic · uv |
 | Data | PostgreSQL 16 — BIGINT cents + NUMERIC(24,10) shares + double-entry ledger ([ADR 0007](docs/adr/0007-double-entry-ledger.md)) |
 | Workflows | Temporal (single node, own Postgres) — durable market lifecycle: close timers, settlement, payout ([ADR 0008](docs/adr/0008-temporal-lifecycle.md)) |
-| Realtime | SSE + Postgres LISTEN/NOTIFY (`/api/stream`, `/api/markets/{slug}/stream`) |
+| Realtime | SSE + Postgres LISTEN/NOTIFY, fanned out through Redis pub/sub ([ADR 0009](docs/adr/0009-redis-layer.md)) |
 | Events | Transactional outbox → Kafka relay → candles · volume · analytics consumers — [failure model](docs/failure-model.md) |
+| Cache/limits | Redis — hot-market cache, fixed-window rate limits, SSE fan-out; every use fails open |
+| Observability | OTel → collector → Prometheus · Tempo · Grafana (order-pipeline dashboard) + k6 load profile |
 | Tests | pytest (API core) · Vitest (AMM mirror vs Python fixtures) · Playwright (signup→trade→resolve) |
 
 Decisions are recorded in [docs/adr/](docs/adr/); the phased target
@@ -25,15 +28,18 @@ architecture (Kafka, Temporal, ledger, charts, AI layer) is in
 make dev
 ```
 
-One command from cold start: Postgres, Kafka, and Temporal on compose
-(the event backbone's broker and the lifecycle workflow server), Alembic
-migrations, the idempotent demo seed, the API on `:8393`, the web app on
-**http://localhost:3001** (3000 was taken on this machine), and the
-Temporal lifecycle worker. First run installs web dependencies
-automatically; Ctrl-C (or either process dying) stops everything.
-`make help` lists the pieces (`db`, `api`, `web`, `worker`, `migrate`,
-`seed`, `events`, `down`) for running them alone. The Temporal UI is
-opt-in: `docker compose --profile ui up` → http://localhost:8081.
+One command from cold start: Postgres, Kafka, Redis, Temporal, and the
+observability pipeline on compose, Alembic migrations, the idempotent demo
+seed, the API on `:8393`, the web app on **http://localhost:3001** (3000 was
+taken on this machine), and the Temporal lifecycle worker. First run
+installs workspace dependencies automatically (pnpm); Ctrl-C (or either
+process dying) stops everything. `make help` lists the pieces (`db`, `api`,
+`web`, `worker`, `migrate`, `seed`, `events`, `load`, `down`) for running
+them alone. Dashboards come up with the stack: **Grafana** at
+http://localhost:3002 (order pipeline: latency percentiles, cache hit
+ratio, outbox + consumer lag) and Prometheus at http://localhost:9091;
+traces are in Grafana's Explore → Tempo. The Temporal UI is opt-in:
+`docker compose --profile ui up` → http://localhost:8081.
 
 ```bash
 make test        # API: math, money, concurrency, idempotency, lifecycle, pagination, relay, consumers, ledger, workflows
@@ -50,12 +56,39 @@ application, DLQ policy — is [docs/failure-model.md](docs/failure-model.md).
 
 CI (`.github/workflows/ci.yml`) runs pytest and tsc + Vitest on every push.
 
+## Performance
+
+`load/order-path.js` (k6) drives the order path and the hot reads; run it
+with `make load` against a local stack. Numbers below are from a dev
+laptop with the full compose stack (Postgres, Kafka, Temporal, Redis,
+collector/Prometheus/Grafana/Tempo) running alongside — treat them as
+shape, not bench.
+
+| profile (traders + 8 readers) | order med / p95 | markets list med / p95 |
+|---|---|---|
+| 10 traders, Redis cache on | 86 ms / 0.86 s | 5.9 ms / 31 ms |
+| 10 traders, Redis off | 557 ms / 1.79 s | 62 ms / 302 ms |
+| 40 traders, Redis cache on | 430 ms / 2.78 s | 16 ms / 92 ms |
+
+Two things the table says: the markets cache is worth ~10× on the hot read
+(94% hit rate while readers hammer it, so the database's budget goes to
+orders), and per-order latency under contention is queueing, not engine —
+orders on one market serialize on the market row lock by design (LMSR
+correctness), and the lock→commit ("matching") percentiles on the Grafana
+dashboard confirm engine time is a small slice of the p95. Zero failed
+requests across runs; rate limits (30 orders/min/user) were never lifted
+for these numbers.
+
 ## Layout
 
 ```
-apps/web/        Next.js client (components ported from v0.2, design CSS kept verbatim)
-services/api/    FastAPI service (app/, alembic/, tests/) + relay/ + consumers/ + worker/
-docs/            ADRs + ROADMAP + failure model
+apps/web/          Next.js client (components ported from v0.2, design CSS kept verbatim)
+packages/contracts Shared Zod API schemas (workspace package)
+services/api/      FastAPI service (app/, alembic/, tests/) + relay/ + consumers/ + worker/
+docker/            compose config: collector, Prometheus, Tempo, Grafana provisioning + dashboard
+deploy/            single-machine entrypoint (see Dockerfile / fly.toml / docs/deploy.md)
+load/              k6 order-path profile
+docs/              ADRs + ROADMAP + failure model
 ```
 
 ## How the interesting parts work
@@ -66,8 +99,11 @@ docs/            ADRs + ROADMAP + failure model
 - **Money** — integer cents for balances, NUMERIC(24,10) for shares/quantities,
   quantized at the DB boundary; one deliberate rounding point per fill.
 - **Live prices** — the trade transaction fires `pg_notify('market_ticks', …)`,
-  delivered by Postgres on commit; each SSE tab holds one LISTEN connection
-  and filters by slug. No Redis, no socket server, free-tier friendly.
+  delivered by Postgres on commit; one bridge per process republishes ticks
+  to Redis pub/sub, and SSE clients subscribe there ([ADR 0009](docs/adr/0009-redis-layer.md))
+  — Postgres connections no longer scale with open tabs, and a second API
+  instance's clients see every tick. Without Redis each client falls back
+  to its own LISTEN connection, which is correct for one instance.
 - **Events** — the same transaction appends to `outbox_events`; the relay
   publishes those rows to Kafka keyed by market_id (per-market total
   order), and consumer groups build candles, live volume, and analytics
@@ -90,6 +126,16 @@ docs/            ADRs + ROADMAP + failure model
   from the journal.
 - **Read models** — trades and price history paginate by keyset
   (`?limit&before_id`), so live inserts can't skew a page walk.
+- **Redis, fail-open** — fixed-window rate limits (auth/orders/creates,
+  429 + `Retry-After`), a 2-second hot cache on the markets list (purged
+  by content-changing writes so a client never sees a list that predates
+  its own write), and the SSE fan-out above. Redis down or unset means the
+  limiter allows, the cache misses, and the stream falls back — the API
+  stays correct without it.
+- **Observability** — every process pushes OTLP to the collector; Grafana's
+  order-pipeline dashboard watches order/matching latency percentiles,
+  orders/s, cache hit ratio, rate-limit rejections, SSE streams, outbox
+  lag, and per-group consumer lag; FastAPI server spans land in Tempo.
 - **Product surface** — Lightweight Charts with range switcher, volume
   pane, and lifecycle markers; a portfolio terminal with live P&L off
   the global SSE stream; ⌘K command palette and keyboard trading
@@ -97,13 +143,19 @@ docs/            ADRs + ROADMAP + failure model
   tabular prices everywhere with Motion used only where it means
   something (tweened digits on ticks/fills, the fill toast).
 
-## Production checklist
+## Production
 
-Everything is env-driven (`services/api/.env.example` documents the knobs):
-`DATABASE_URL` for the real Postgres, `COOKIE_SECURE=true` behind HTTPS,
-`CORS_ORIGINS` pinned to the deployed origin, `KAFKA_BOOTSTRAP_SERVERS`
-and `TEMPORAL_ADDRESS` for the backbone and workflow server, and
-`SETTLEMENT_MODE=inline` if a deployment runs without a lifecycle worker.
+**Deploying**: [docs/deploy.md](docs/deploy.md) — one Fly machine runs
+Next (standalone) + the API behind the same origin, with managed Postgres;
+the image, `fly.toml`, and an SSE-through-the-proxy verification recipe are
+in the repo. Everything else is env-driven
+(`services/api/.env.example` documents the knobs): `DATABASE_URL` for the
+real Postgres (`postgres://` DSNs are normalized automatically),
+`COOKIE_SECURE=true` behind HTTPS, `CORS_ORIGINS` pinned to the deployed
+origin, `REDIS_URL` to switch on cache/limits/fan-out,
+`KAFKA_BOOTSTRAP_SERVERS` and `TEMPORAL_ADDRESS` for the backbone and
+workflow server, and `SETTLEMENT_MODE=inline` if a deployment runs without
+a lifecycle worker.
 
 ## History
 

@@ -60,20 +60,28 @@ moments that earn it — tweened digits on ticks/fills and the fill
 toast, both reduced-motion-safe. Charts library swap kept the bespoke
 CSS system intact (that boundary held).
 
-## Phase 5 — Scale & ops (trigger: real users / real load)
+## Phase 5 — Scale & ops ✅ (shipped 2026-10-01)
 
-- **Redis**: hot-market cache, rate limiting, SSE fan-out for multi-instance.
+- **Redis** ✅: hot-market cache (94% hit rate under load, ~10× on the hot
+  read), fixed-window rate limits, SSE fan-out via a per-process
+  pg LISTEN → Redis PUBLISH bridge — every use fails open
+  ([ADR 0009](adr/0009-redis-layer.md)).
 - **Native WebSockets** with snapshot+delta+sequence protocol (the SSE
   events already carry sequence numbers) — when two-way or high-frequency
   book updates exist (i.e., if ADR 0001 is revisited for a CLOB).
 - **Go**: only for a CLOB matching engine (deterministic, price-time
   priority, per-market sequencing). Not applicable while fills are LMSR.
-- **Observability**: OTel SDK → collector → Prometheus/Grafana/Tempo, k6
-  load profile for the order path.
-- pnpm workspaces + Turborepo when a second JS package (shared contracts)
-  appears; GitHub Actions CI already runs the test suites on every push.
-- Deployment: Fly/Railway/Render single node + managed Postgres; the stack
-  is deliberately single-process-friendly until Phase 5 says otherwise.
+- **Observability** ✅: OTel → collector → Prometheus/Grafana/Tempo in
+  compose; order-pipeline dashboard (p50/p95/p99 order + matching latency,
+  cache ratio, outbox/consumer lag); k6 order-path profile with numbers in
+  the README (`make load`).
+- **pnpm workspaces** ✅: `packages/contracts` (shared Zod schemas) as the
+  second JS package; Turborepo deferred until build orchestration actually
+  hurts.
+- **Deployment** ✅: single-machine Fly profile — Next standalone + API in
+  one container, release-phase migrations, SSE verified unbuffered through
+  the edge locally ([deploy.md](deploy.md)); actual deploy awaits
+  `flyctl auth login`.
 
 ## Phase 6 — Intelligence (trigger: exchange core stable)
 

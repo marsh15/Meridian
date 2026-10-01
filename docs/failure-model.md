@@ -162,6 +162,10 @@ through the outbox, not parked in a queue.
 | Worker dies mid-settlement | Activity retry or workflow continues after restart | Temporal (durable execution) |
 | Temporal down | Resolve endpoint returns 503; close timers pause | Temporal restart; timers resume where they left off |
 | Unbalanced ledger post attempted | `post_entries` raises, transaction aborts | Nobody needed — the DB trigger also guards commit |
+| Redis down / unset (ADR 0009) | Limits allow, markets list goes to Postgres, SSE falls back to per-client LISTEN | Nobody needed — every use fails open |
+| Redis dies mid-SSE-stream | That stream ends | Browser EventSource reconnects (fallback or re-subscribe) |
+| Redis blip at API boot | Redis-backed features off | 5s retry cooldown re-enables without a restart |
+| Cache purge lost (Redis down at write time) | List may be ≤2s stale | TTL — bounded by construction |
 
 Settlement durability (ADR 0008): market lifecycle runs as a Temporal
 workflow — the close timer and the wait-for-resolution are durable state,
@@ -170,6 +174,20 @@ the workflow left off. Activities are idempotent (`close_market` is a
 no-op on a non-open market; `settle_market` re-checks status under the
 market row lock), so temporal retries and replays cannot double-pay. The
 outbox rows these transactions write feed this pipeline unchanged.
+
+## The Redis layer fails open (ADR 0009)
+
+Rate limits, the markets-list cache, and the SSE fan-out treat Redis as an
+optimization. The cache is never authoritative: content-changing writes
+purge it post-commit, live prices reach clients over SSE regardless, and
+the TTL bounds any staleness to two seconds. Ticks originate as
+`pg_notify` inside the trade transaction and are only *republished* to
+Redis — so fan-out can duplicate or drop at worst, never fabricate, and
+the per-client LISTEN path remains the always-correct fallback for a
+single instance. The observability pipeline follows the same philosophy:
+`OTLP_ENDPOINT` unset disables it entirely, and exporter failures drop
+batches (2s timeouts) rather than block the app — telemetry must never
+become a dependency either.
 
 ## Operating notes
 
