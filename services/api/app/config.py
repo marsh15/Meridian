@@ -69,7 +69,9 @@ class Settings(BaseSettings):
 
     @property
     def asyncpg_dsn(self) -> str:
-        return self.database_url.replace("+asyncpg", "")
+        # raw asyncpg parses `sslmode=` in the DSN query; the SQLAlchemy
+        # dialect form (`ssl=`) it would reject as a server param
+        return self.database_url.replace("+asyncpg", "").replace("ssl=", "sslmode=")
 
 
 settings = Settings()
