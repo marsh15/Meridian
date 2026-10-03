@@ -41,7 +41,7 @@ async def verify_listen_notify(raw_dsn: str) -> None:
     listener = await asyncpg.connect(raw_dsn)
     notifier = await asyncpg.connect(raw_dsn)
     received: asyncio.Queue[str] = asyncio.Queue()
-    listener.add_listener("market_ticks", lambda *_a, payload="": received.put_nowait(payload))
+    await listener.add_listener("market_ticks", lambda *_a, payload="": received.put_nowait(payload))
     await asyncio.sleep(0.3)  # let the LISTEN register
     await notifier.execute("SELECT pg_notify('market_ticks', $1)", '{"probe": true}')
     try:
@@ -78,7 +78,9 @@ def main() -> None:
     asyncio.run(seed_main())
     print("demo world seeded (idempotent)")
 
-    asyncio.run(verify_listen_notify(dsn.replace("+asyncpg", "")))
+    # raw asyncpg parses `sslmode=` in the DSN query (the SQLAlchemy dialect
+    # wants the `ssl=` kwarg form instead — hence normalize()'s output)
+    asyncio.run(verify_listen_notify(dsn.replace("+asyncpg", "").replace("ssl=", "sslmode=")))
 
     print("\nDATABASE_URL for the Render dashboard:")
     print(dsn)

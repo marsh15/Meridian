@@ -245,7 +245,8 @@ async def seed_demo_activity(session) -> None:
         await session.execute(text("SELECT id, q_yes, q_no FROM markets WHERE status = 'open' ORDER BY id"))
     ).mappings().all()
     for m in markets:
-        q_yes, q_no = m["q_yes"], m["q_no"]
+        # NUMERIC columns arrive as Decimal; the replay below is float math
+        q_yes, q_no = float(m["q_yes"]), float(m["q_no"])
         holdings: dict[tuple[int, str], float] = {}
         drift = 0.0
         n_trades = 2 + rand.randrange(4)

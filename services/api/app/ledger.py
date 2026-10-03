@@ -36,13 +36,22 @@ GENESIS_SQL = """
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM ledger_entries) THEN
+    -- account inserts must be idempotent: migration m0006 already ran this
+    -- block on an empty database (creating only the 'system' account), and
+    -- the seed replays it once users/markets/trades exist
     INSERT INTO ledger_accounts (kind, user_id)
-      SELECT 'user_cash', id FROM users;
+      SELECT 'user_cash', u.id FROM users u
+      WHERE NOT EXISTS (SELECT 1 FROM ledger_accounts a
+                        WHERE a.kind = 'user_cash' AND a.user_id = u.id);
     INSERT INTO ledger_accounts (kind, market_id)
       SELECT 'market_escrow', m.id FROM markets m
       WHERE m.status <> 'resolved'
-        AND EXISTS (SELECT 1 FROM trades t WHERE t.market_id = m.id);
-    INSERT INTO ledger_accounts (kind) VALUES ('system');
+        AND EXISTS (SELECT 1 FROM trades t WHERE t.market_id = m.id)
+        AND NOT EXISTS (SELECT 1 FROM ledger_accounts a
+                        WHERE a.kind = 'market_escrow' AND a.market_id = m.id);
+    INSERT INTO ledger_accounts (kind)
+      SELECT 'system'
+      WHERE NOT EXISTS (SELECT 1 FROM ledger_accounts WHERE kind = 'system');
 
     INSERT INTO ledger_entries
       (transaction_id, account_id, direction, amount_cents, ref_type, memo)
