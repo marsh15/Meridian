@@ -20,19 +20,19 @@ A trade must change money in Postgres and emit an event to the outside
 world. If the API wrote to Postgres and published to Kafka in the same
 request, a crash between the two writes would produce one of two lies:
 a trade that happened but no event says so, or an event for a trade that
-rolled back. Two systems, no shared transaction — that is the dual-write
+rolled back. Two systems, no shared transaction. That is the dual-write
 problem.
 
 Meridian refuses it by writing only to Postgres. The trade transaction
 appends a row to `outbox_events` in the same commit
 (`app/events.py:record_event`), so an event and the state change it
 describes are one atomic unit. The `pg_notify` fired alongside it is UI
-sugar for the SSE stream — if a notification is lost, a chart lags; the
-outbox row is still there.
+sugar for the SSE stream; if a notification is lost, a chart lags, but
+the outbox row is still there.
 
-The consequence: **the outbox is the source of truth for events.** Kafka
-is a distribution cache in front of it. Every recovery story below works
-because the outbox row survives anything Kafka does.
+The consequence: **the outbox is the source of truth for events.**
+Kafka is a distribution cache in front of it. Every recovery story below
+works because the outbox row survives anything Kafka does.
 
 ## What the relay guarantees
 
@@ -44,15 +44,15 @@ The relay (`services/api/relay/main.py`) runs one cycle at a time:
 2. Publish each row to its topic (`exchange.trade-events` for
    `TradeExecuted`, `exchange.market-events` for market lifecycle), keyed
    by `market_id`, `acks=all`, in outbox-id order.
-3. Mark the rows `published_at = now()` and commit — releasing the locks.
+3. Mark the rows `published_at = now()` and commit, releasing the locks.
 
 Two relay instances never double-publish: `SKIP LOCKED` makes the second
 one work-steal instead of block, and because the locks live until the
 marks commit, two live relays can never publish the same row. But
-**per-market order (below) only holds with one relay publishing** — a
+**per-market order (below) only holds with one relay publishing**: a
 second relay claiming the next batch can commit a market's later events
 while the first relay is still publishing its earlier ones. The relay
-therefore holds a Postgres advisory lock as a leadership lease: a second
+therefore holds a Postgres advisory lock as a leadership lease; a second
 instance exits at boot instead of splitting the ordering. The only
 source of duplicate publishes is a crash, never concurrency.
 
@@ -70,18 +70,18 @@ That window is left open on purpose. Closing it with Kafka transactions
 (transactional producer, `read_committed` consumers) would remove broker
 duplicates but not consumer-side redelivery after a rebalance, so
 consumers would still need idempotent apply. Meridian keeps the simpler
-contract — duplicate delivery, exactly-once *application* — and spends
+contract (duplicate delivery, exactly-once *application*) and spends
 the complexity budget there.
 
 ### Why per-market order holds
 
 Every message is keyed by `market_id`, so the partitioner sends all
 events of one market to one partition, and a partition is an append-only
-log: order in, order out. (Order holds per *topic*: trade and lifecycle
+log: order in, order out. Order holds per *topic*: trade and lifecycle
 events ride separate topics, so the candles consumer guards against a
-pre-resolution trade landing after `MarketResolved` — it checks the
-market's status and skips the candle upsert, keeping the settlement
-candle final.) Within a market, outbox-id order is execution
+pre-resolution trade landing after `MarketResolved` by checking the
+market's status and skipping the candle upsert, which keeps the
+settlement candle final. Within a market, outbox-id order is execution
 order, because trades serialize on the market row lock (ADR 0001) and
 each trade takes its outbox id inside that serialized transaction.
 Markets interleave freely; no consumer reads across markets expecting a
@@ -90,10 +90,10 @@ global order.
 ### Unknown event types
 
 `relay.main.topic_for` returns no topic for a type it does not know.
-Such rows are quarantined to `exchange.dlq` and marked published — left
+Such rows are quarantined to `exchange.dlq` and marked published; left
 unpublished they would sit at the head of the id-ordered claim forever,
 and 200 of them would wedge every batch behind them. Adding an event
-type therefore means teaching the relay its topic — a deliberate
+type therefore means teaching the relay its topic, a deliberate
 coupling so new events cannot silently vanish into a default topic.
 
 ## What consumers guarantee
@@ -115,9 +115,9 @@ VALUES (:group, :id) ON CONFLICT DO NOTHING;
 If the insert returns a row, the group has not seen the event, and the
 handler applies the read-model change in that same transaction. If it
 returns none, the handler skips. Apply and marker commit together or not
-at all, so a duplicate can never half-apply — application is
+at all, so a duplicate can never half-apply; application is
 effectively-once. `trade_facts` is also protected by its primary key
-(the outbox id — a replayed insert is a no-op by construction) but
+(the outbox id; a replayed insert is a no-op by construction) but
 inserts the marker anyway, keeping group semantics uniform.
 
 ### Rebuilding a read model
@@ -127,19 +127,19 @@ truncate the read model and its `processed_events` rows, then either
 reset the group's offsets or create a fresh group. Replay from the
 beginning re-derives everything; `processed_events` was truncated, so
 every event re-applies. `exchange.*` topics carry infinite retention
-(`scripts/provision-topics.sh`) to make this possible — shrink it only
+(`scripts/provision-topics.sh`) to make this possible. Shrink it only
 after accepting that rebuilds then start from the outbox, not the log.
 
 ## When handlers fail: the DLQ policy
 
-A handler that raises — bad payload, schema drift, a bug — retries once
+A handler that raises (bad payload, schema drift, a bug) retries once
 inside the consumer. If it raises again, the consumer publishes the raw
 message to `exchange.dlq` with headers (`original-topic`,
 `consumer-group`, `error`), commits the offset, and moves on. A poison
 message must never wedge a partition behind it forever. If the DLQ
 publish itself fails (Kafka down), the offset is **not** committed: the
 pump re-raises, its supervisor restarts it with backoff, and the message
-is redelivered — an event is applied or dead-lettered, never silently
+is redelivered. An event is applied or dead-lettered, never silently
 dropped. Each group's pump is supervised independently, so one group
 crashing never stops the other two.
 
@@ -167,32 +167,33 @@ through the outbox, not parked in a queue.
 
 | Crash or fault | Immediate effect | Who heals it |
 |---|---|---|
-| API dies mid-trade | Transaction rolls back; no outbox row, no notify | Nobody needed — nothing happened |
+| API dies mid-trade | Transaction rolls back; no outbox row, no notify | Nobody needed (nothing happened) |
 | Relay dies before publish | Rows stay unpublished | Relay restart claims them |
 | Relay dies after publish, before marks | Kafka holds a duplicate | Consumer `processed_events` dedupe |
-| Two relays running | Nothing — `SKIP LOCKED` work-stealing | Nobody needed |
+| Two relays running | Nothing; `SKIP LOCKED` work-stealing | Nobody needed |
 | Consumer dies after apply, before offset commit | Event redelivered | Consumer `processed_events` dedupe |
 | Handler raises twice | Message dead-lettered, offset advances | Operator: fix, replay from outbox |
 | New event type, relay not taught | Row stuck unpublished, error logged each cycle | Operator: extend `topic_for` |
 | Kafka down | Relay cycle fails, rows stay unpublished | Kafka restart; relay drains backlog |
 | Worker dies mid-settlement | Activity retry or workflow continues after restart | Temporal (durable execution) |
 | Temporal down | Resolve endpoint returns 503; close timers pause | Temporal restart; timers resume where they left off |
-| Unbalanced ledger post attempted | `post_entries` raises, transaction aborts | Nobody needed — the DB trigger also guards commit |
-| Redis down / unset (ADR 0009) | Limits allow, markets list goes to Postgres, SSE falls back to per-client LISTEN | Nobody needed — every use fails open |
+| Unbalanced ledger post attempted | `post_entries` raises, transaction aborts | Nobody needed; the DB trigger also guards commit |
+| Redis down / unset (ADR 0009) | Limits allow, markets list goes to Postgres, SSE falls back to per-client LISTEN | Nobody needed; every use fails open |
 | Redis dies mid-SSE-stream | That stream ends | Browser EventSource reconnects (fallback or re-subscribe) |
 | Redis blip at API boot | Redis-backed features off | 5s retry cooldown re-enables without a restart |
-| Cache purge lost (Redis down at write time) | List may be ≤2s stale | TTL — bounded by construction |
+| Cache purge lost (Redis down at write time) | List may be ≤2s stale | TTL; bounded by construction |
 | LLM unset / down (ADR 0010) | Briefs/explanations 503 cleanly; chart event timeline unaffected | Operator: set LLM_BASE_URL (or start Ollama) |
 | Retrieval fails (news/wiki unreachable) | Brief generates from market data with zero sources | Retry on next generate; note visible in the brief |
 | Model returns garbage JSON | 502 after one plain-completion retry | Operator: regenerate (cache keeps the last good artifact) |
 
 Settlement durability (ADR 0008): market lifecycle runs as a Temporal
-workflow — the close timer and the wait-for-resolution are durable state,
-not in-process tasks, so worker and server restarts resume exactly where
-the workflow left off. Activities are idempotent (`close_market` is a
-no-op on a non-open market; `settle_market` re-checks status under the
-market row lock), so temporal retries and replays cannot double-pay. The
-outbox rows these transactions write feed this pipeline unchanged.
+workflow, so the close timer and the wait-for-resolution are durable
+state, not in-process tasks, and worker and server restarts resume
+exactly where the workflow left off. Activities are idempotent
+(`close_market` is a no-op on a non-open market; `settle_market`
+re-checks status under the market row lock), so temporal retries and
+replays cannot double-pay. The outbox rows these transactions write feed
+this pipeline unchanged.
 
 ## The Redis layer fails open (ADR 0009)
 
@@ -201,18 +202,18 @@ optimization. The cache is never authoritative: content-changing writes
 purge it post-commit, live prices reach clients over SSE regardless, and
 the TTL bounds any staleness to two seconds. Ticks originate as
 `pg_notify` inside the trade transaction and are only *republished* to
-Redis — so fan-out can duplicate or drop at worst, never fabricate, and
+Redis, so fan-out can duplicate or drop at worst, never fabricate, and
 the per-client LISTEN path remains the always-correct fallback for a
 single instance. The observability pipeline follows the same philosophy:
 `OTLP_ENDPOINT` unset disables it entirely, and exporter failures drop
-batches (2s timeouts) rather than block the app — telemetry must never
+batches (2s timeouts) rather than block the app. Telemetry must never
 become a dependency either.
 
 ## The intelligence layer cites or says nothing (ADR 0010)
 
 Briefs and explanations are optional by construction: no LLM configured
 means a clean 503, retrieval failures mean fewer sources, and a malformed
-model answer means a 502 — never a partially-trusted artifact. The one
+model answer means a 502, never a partially-trusted artifact. The one
 hard invariant: the model only cites fetched sources by index, and the
 server attaches the real URLs, so a citation cannot link somewhere the
 retriever never went. Generated artifacts are cached rows; the last good
