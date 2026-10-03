@@ -1,7 +1,24 @@
 # Meridian
 
+[![CI](https://github.com/marsh15/Meridian/actions/workflows/ci.yml/badge.svg)](https://github.com/marsh15/Meridian/actions/workflows/ci.yml)
+
 A prediction-market exchange: yes/no markets priced by an LMSR automated
 market maker, instant fills, live prices over SSE, play money.
+
+## Live demo
+
+**https://meridian-8j09.onrender.com** — the exchange running on a $0
+stack: Render's free tier (one container: Next.js standalone proxying the
+FastAPI service) with Postgres on Aiven's free plan. Sign up with any
+email/password and trade — balances are play money, orders fill instantly
+against the LMSR market maker, and the double-entry ledger reconciles
+every fill ([deploy profile](docs/deploy.md)).
+
+Free-tier caveats: after ~15 min idle the service sleeps, so the first
+load pays a ~50 s cold start (an uptime pinger keeps it warm otherwise),
+and this profile scales the architecture down — settlement runs inline
+and cache/rate-limits/fan-out fail open with Redis, Kafka, and Temporal
+off. The full stack runs locally with `make dev` below.
 
 ## Stack
 
