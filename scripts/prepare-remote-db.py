@@ -26,9 +26,12 @@ def normalize(dsn: str) -> str:
         dsn = "postgresql+asyncpg://" + dsn[len("postgres://"):]
     elif dsn.startswith("postgresql://"):
         dsn = "postgresql+asyncpg://" + dsn[len("postgresql://"):]
-    dsn = dsn.replace("ssl-mode=", "sslmode=")  # Aiven's hyphenated form
-    if "sslmode" not in dsn:
-        dsn += ("&" if "?" in dsn else "?") + "sslmode=require"
+    dsn = dsn.replace("ssl-mode=", "ssl=")  # Aiven's hyphenated form
+    # asyncpg takes `ssl=`, not libpq's `sslmode=` (which it rejects as a
+    # connect kwarg); same requirement, driver-native spelling.
+    dsn = dsn.replace("sslmode=", "ssl=")
+    if "ssl=" not in dsn:
+        dsn += ("&" if "?" in dsn else "?") + "ssl=require"
     return dsn
 
 
