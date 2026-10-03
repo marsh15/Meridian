@@ -86,6 +86,50 @@ On any host that isn't Fly (which runs `alembic upgrade head` in its
 release phase), run the migration command above once per deploy before
 starting the container — the entrypoint never migrates.
 
+## Free tier: Render + Aiven (the $0 deployment)
+
+The same image runs on [Render](https://render.com)'s free web service with
+Postgres on [Aiven](https://aiven.io)'s free plan — no card charged
+anywhere. Trade-offs vs the Fly profile: 512 MB RAM, the service sleeps
+after ~15 min of idle (first visitor pays a ~50s cold start), and free
+Render runs no pre-deploy hooks, so migrations happen from your machine.
+
+One-time, in order:
+
+1. **GitHub** — push the repo; Render deploys from it (`render.yaml` is
+   the Blueprint at the repo root).
+2. **Aiven** — create a free PostgreSQL service (PG 16), copy the
+   service URI. It looks like
+   `postgres://avnadmin:…@pg-…aivencloud.com:…/defaultdb?ssl-mode=require`.
+3. **Prepare the database** (migrations + demo seed + a LISTEN/NOTIFY
+   round-trip proof — the SSE backbone, verified before anything else):
+
+   ```bash
+   uv run --project services/api python scripts/prepare-remote-db.py "<AIVEN URI>"
+   ```
+
+   It prints the normalized `DATABASE_URL` to paste into Render
+   (`postgresql+asyncpg://…?sslmode=require`).
+4. **Render** — New → Blueprint → pick the repo; set `DATABASE_URL` as
+   the one secret (the rest of the env comes from `render.yaml`:
+   `SETTLEMENT_MODE=inline`, `COOKIE_SECURE=true`,
+   `TRUST_PROXY_HEADERS=true`, `REDIS_URL=""`). Deploy.
+5. **Verify live** (same checks as the Fly section):
+
+   ```bash
+   curl -s https://<app>.onrender.com/api/health        # {"ok":true}
+   curl -s https://<app>.onrender.com/api/markets | head -c 200
+   curl -N --max-time 5 https://<app>.onrender.com/api/markets/<slug>/stream
+   # → `event: tick` + a snapshot line arrive unbuffered
+   ```
+6. **Pinger** — a free uptime monitor (cron-job.org or UptimeRobot)
+   requesting `/api/health` every 10 minutes keeps both the service awake
+   and the database marked active. This is the free-tier health story:
+   Render's native health checks are a paid feature.
+
+Database upgrades on later deploys: re-run step 3 (idempotent —
+migrations stop at head, the seed skips itself).
+
 ## Scaling past one machine
 
 - **Second API process** → set `REDIS_URL` (e.g. Upstash): rate limits and the

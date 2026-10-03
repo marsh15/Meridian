@@ -8,10 +8,11 @@ cd /srv/api
 API_PID=$!
 
 cd /srv/web/apps/web
-PORT=3000 HOSTNAME=0.0.0.0 node server.js &
+# platforms inject PORT (Render defaults it to 10000); same-machine loopback
+PORT="${PORT:-3000}" HOSTNAME=0.0.0.0 node server.js &
 WEB_PID=$!
 
-echo "meridian: api(pid $API_PID) on :8393, web(pid $WEB_PID) on :3000"
+echo "meridian: api(pid $API_PID) on :8393, web(pid $WEB_PID) on :$PORT"
 
 trap 'kill $API_PID $WEB_PID 2>/dev/null; exit 0' TERM INT
 

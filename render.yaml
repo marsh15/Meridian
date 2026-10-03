@@ -1,0 +1,29 @@
+# Render Blueprint — the free-tier deployment profile (docs/deploy.md §"Free
+# tier: Render + Aiven"). One Docker web service: Next standalone on $PORT,
+# the FastAPI API on loopback behind it, Postgres hosted on Aiven's free
+# plan (DATABASE_URL is a dashboard secret).
+#
+# Free-tier realities: 512MB RAM, and the service sleeps after ~15 min of
+# inactivity — wake it with a free uptime pinger on /api/health every
+# 10 minutes (Render health checks are a paid feature, so the pinger is the
+# health story here). Migrations are NOT run by Render on the free plan:
+# scripts/prepare-remote-db.py applies them (plus the demo seed) before the
+# first deploy.
+
+services:
+  - type: web
+    name: meridian
+    runtime: docker
+    plan: free
+    autoDeploy: true        # push to main → rebuild + deploy
+    envVars:
+      - key: DATABASE_URL   # Aiven URI, set in the dashboard (secret)
+        sync: false
+      - key: SETTLEMENT_MODE
+        value: inline       # no Temporal worker in this profile
+      - key: COOKIE_SECURE
+        value: "true"       # https-only session cookie
+      - key: TRUST_PROXY_HEADERS
+        value: "true"       # Render's proxy sets X-Forwarded-For
+      - key: REDIS_URL
+        value: ""           # fail-open: rate limits/cache/fan-out off
