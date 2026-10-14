@@ -5,9 +5,9 @@
 A prediction-market exchange: yes/no markets priced by an LMSR automated
 market maker, instant fills, live prices over SSE, play money.
 
-[![Watch the 22-second demo](docs/demo.jpg)](docs/demo.mp4)
+![Meridian demo](docs/demo.gif)
 
-<sub>Click the image to watch the 22-second demo.</sub>
+<sub>22-second demo. [Download the full-quality video with sound](https://github.com/marsh15/Meridian/raw/main/docs/demo.mp4).</sub>
 
 ## Live demo
 
