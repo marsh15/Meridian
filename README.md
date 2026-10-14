@@ -5,6 +5,10 @@
 A prediction-market exchange: yes/no markets priced by an LMSR automated
 market maker, instant fills, live prices over SSE, play money.
 
+[![Watch the 22-second demo](docs/demo.jpg)](docs/demo.mp4)
+
+<sub>Click the image to watch the 22-second demo.</sub>
+
 ## Live demo
 
 The exchange runs on a $0 stack at **https://meridian-8j09.onrender.com**:
